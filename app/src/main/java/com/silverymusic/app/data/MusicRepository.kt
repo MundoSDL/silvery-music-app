@@ -10,6 +10,7 @@ import com.silverymusic.app.data.model.Genre
 import com.silverymusic.app.data.model.NowPlaying
 import com.silverymusic.app.data.model.Playlist
 import com.silverymusic.app.data.model.Profile
+import com.silverymusic.app.data.model.RepeatMode
 import com.silverymusic.app.data.model.Track
 import kotlinx.coroutines.flow.StateFlow
 
@@ -99,4 +100,14 @@ interface MusicRepository {
     fun toggleLike(trackId: String)
     fun startSync(friendName: String)
     fun endSync()
+
+    /** Tracks the user has hearted this session, newest first. */
+    val likedTracks: StateFlow<List<Track>>
+
+    /** Current repeat state; the player button cycles Off → All → One. */
+    val repeatMode: StateFlow<RepeatMode>
+    fun cycleRepeatMode()
+
+    /** Randomises the not-yet-played tail of the queue without interrupting playback. */
+    fun shuffleQueue()
 }

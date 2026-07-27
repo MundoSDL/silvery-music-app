@@ -1,6 +1,8 @@
 package com.silverymusic.app.playback
 
+import com.silverymusic.app.data.model.EqSettings
 import com.silverymusic.app.data.model.NowPlaying
+import com.silverymusic.app.data.model.RepeatMode
 import com.silverymusic.app.data.model.Track
 import kotlinx.coroutines.flow.StateFlow
 
@@ -13,6 +15,12 @@ interface PlaybackController {
 
     val nowPlaying: StateFlow<NowPlaying>
     val queue: StateFlow<List<Track>>
+
+    /** Every track the user has hearted this session, newest first. */
+    val likedTracks: StateFlow<List<Track>>
+
+    /** Current repeat state; drives the player's own repeat mode. */
+    val repeatMode: StateFlow<RepeatMode>
 
     fun playQueue(tracks: List<Track>, startIndex: Int = 0, sourceLabel: String)
 
@@ -29,6 +37,15 @@ interface PlaybackController {
     fun toggleLike(trackId: String)
     fun startSync(friendName: String)
     fun endSync()
+
+    /** Advances the repeat state Off → All → One → Off. */
+    fun cycleRepeatMode()
+
+    /** Randomises the not-yet-played tail of the queue without interrupting playback. */
+    fun shuffleQueue()
+
+    /** Applies the graphic-EQ curve to the live audio output. */
+    fun applyEqualizer(settings: EqSettings)
 
     fun release()
 }

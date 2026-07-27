@@ -11,6 +11,7 @@ object Routes {
     const val HOME = "home"
     const val DISCOVER = "discover"
     const val LIBRARY = "library"
+    const val LIKED_SONGS = "liked_songs"
     const val SEARCH = "search"
 
     const val PLAYER = "player"

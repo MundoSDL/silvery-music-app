@@ -1,5 +1,10 @@
 package com.silverymusic.app.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +30,7 @@ import com.silverymusic.app.ui.screens.equalizer.EqualizerScreen
 import com.silverymusic.app.ui.screens.help.HowItWorksScreen
 import com.silverymusic.app.ui.screens.home.HomeScreen
 import com.silverymusic.app.ui.screens.library.LibraryScreen
+import com.silverymusic.app.ui.screens.liked.LikedSongsScreen
 import com.silverymusic.app.ui.screens.onboarding.OnboardingConfirmationScreen
 import com.silverymusic.app.ui.screens.onboarding.OnboardingCreateAccountScreen
 import com.silverymusic.app.ui.screens.onboarding.OnboardingSignUpChoiceScreen
@@ -55,6 +61,9 @@ private fun routeToTab(route: String?): BottomTab? = when (route) {
 /** The browsing surfaces that carry the mini player + bottom nav. Search is one, though it's no longer a tab. */
 private val chromeRoutes = setOf(Routes.HOME, Routes.DISCOVER, Routes.LIBRARY, Routes.SEARCH)
 
+/** Duration of the shared screen cross-fade between destinations, in millis. */
+private const val SCREEN_FADE_MS = 240
+
 @Composable
 fun SilveryApp() {
     val navController = rememberNavController()
@@ -84,7 +93,17 @@ fun SilveryApp() {
 
     Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
         Box(modifier = Modifier.weight(1f)) {
-            NavHost(navController = navController, startDestination = Routes.ONBOARDING_WELCOME) {
+            NavHost(
+                navController = navController,
+                startDestination = Routes.ONBOARDING_WELCOME,
+                // A single quick cross-fade everywhere makes moving between tabs,
+                // Search and detail screens read as one continuous surface rather
+                // than a stack of separate pages.
+                enterTransition = { fadeIn(animationSpec = tween(SCREEN_FADE_MS)) },
+                exitTransition = { fadeOut(animationSpec = tween(SCREEN_FADE_MS)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(SCREEN_FADE_MS)) },
+                popExitTransition = { fadeOut(animationSpec = tween(SCREEN_FADE_MS)) },
+            ) {
                 composable(Routes.ONBOARDING_WELCOME) {
                     OnboardingWelcomeScreen(
                         onGetStarted = { navController.navigate(Routes.ONBOARDING_HOW_IT_WORKS) },
@@ -148,9 +167,25 @@ fun SilveryApp() {
                     LibraryScreen(
                         onOpenSearch = { openSearch() },
                         onOpenProfileSwitcher = { navController.navigate(Routes.PROFILE_SWITCHER) },
+                        onOpenLikedSongs = { navController.navigate(Routes.LIKED_SONGS) },
                     )
                 }
-                composable(Routes.SEARCH) {
+                composable(Routes.LIKED_SONGS) {
+                    LikedSongsScreen(onBack = { navController.popBackStack() })
+                }
+                composable(
+                    Routes.SEARCH,
+                    // Search rises gently from the search bar and settles back down,
+                    // so it feels like the same surface expanding, not a new page.
+                    enterTransition = {
+                        fadeIn(animationSpec = tween(SCREEN_FADE_MS)) +
+                            slideInVertically(animationSpec = tween(SCREEN_FADE_MS)) { height -> height / 12 }
+                    },
+                    popExitTransition = {
+                        fadeOut(animationSpec = tween(SCREEN_FADE_MS)) +
+                            slideOutVertically(animationSpec = tween(SCREEN_FADE_MS)) { height -> height / 12 }
+                    },
+                ) {
                     SearchScreen(onOpenProfileSwitcher = { navController.navigate(Routes.PROFILE_SWITCHER) })
                 }
 

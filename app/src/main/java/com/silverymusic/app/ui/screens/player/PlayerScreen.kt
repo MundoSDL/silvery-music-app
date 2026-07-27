@@ -25,7 +25,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
@@ -33,6 +32,9 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subject
@@ -77,6 +79,7 @@ import com.silverymusic.app.data.DataError
 import com.silverymusic.app.data.model.ListeningStatus
 import com.silverymusic.app.data.model.Lyrics
 import com.silverymusic.app.data.model.NowPlaying
+import com.silverymusic.app.data.model.RepeatMode
 import com.silverymusic.app.data.model.formatDuration
 import com.silverymusic.app.theme.SilveryTheme
 import com.silverymusic.app.ui.components.Artwork
@@ -128,7 +131,8 @@ fun PlayerScreen(
                     onRetryLyrics = viewModel::onRetryLyrics,
                     onOpenEq = onOpenEq,
                     onOpenQueue = onOpenQueue,
-                    onFeelingLucky = viewModel::onFeelingLucky,
+                    onShuffleQueue = viewModel::onShuffleQueue,
+                    onCycleRepeat = viewModel::onCycleRepeat,
                     onOpenSettings = onOpenSettings,
                 )
             }
@@ -150,7 +154,8 @@ private fun PlayerContent(
     onRetryLyrics: () -> Unit,
     onOpenEq: () -> Unit,
     onOpenQueue: () -> Unit,
-    onFeelingLucky: () -> Unit,
+    onShuffleQueue: () -> Unit,
+    onCycleRepeat: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     // Swipe-down-to-dismiss. The sheet follows the finger and fades as it goes;
@@ -324,6 +329,7 @@ private fun PlayerContent(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                RepeatButton(mode = uiState.repeatMode, onClick = onCycleRepeat)
                 IconButton(onClick = onSkipPrevious) {
                     Icon(imageVector = Icons.Filled.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(32.dp))
                 }
@@ -354,6 +360,16 @@ private fun PlayerContent(
                 IconButton(onClick = onSkipNext) {
                     Icon(imageVector = Icons.Filled.SkipNext, contentDescription = "Next", modifier = Modifier.size(32.dp))
                 }
+                // Shuffle is a one-shot "randomise what's coming up", not a toggle —
+                // it replaces the old "I'm Feeling Lucky" jump.
+                IconButton(onClick = onShuffleQueue) {
+                    Icon(
+                        imageVector = Icons.Filled.Shuffle,
+                        contentDescription = "Shuffle queue",
+                        tint = SilveryTheme.colors.textTertiary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
 
             Row(
@@ -370,9 +386,25 @@ private fun PlayerContent(
                 )
                 PlayerActionButton(icon = Icons.Filled.QueueMusic, label = "Queue", onClick = onOpenQueue)
                 PlayerActionButton(icon = Icons.Filled.GraphicEq, label = "EQ", onClick = onOpenEq)
-                PlayerActionButton(icon = Icons.Filled.Casino, label = "I'm Feeling Lucky", onClick = onFeelingLucky)
             }
         }
+    }
+}
+
+@Composable
+private fun RepeatButton(mode: RepeatMode, onClick: () -> Unit) {
+    val active = mode != RepeatMode.OFF
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = if (mode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+            contentDescription = when (mode) {
+                RepeatMode.OFF -> "Repeat off"
+                RepeatMode.ALL -> "Repeat all"
+                RepeatMode.ONE -> "Repeat one"
+            },
+            tint = if (active) MaterialTheme.colorScheme.onBackground else SilveryTheme.colors.textTertiary,
+            modifier = Modifier.size(24.dp),
+        )
     }
 }
 

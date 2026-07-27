@@ -29,6 +29,11 @@ class PlayerViewModel(
 
     init {
         viewModelScope.launch {
+            repository.repeatMode.collect { mode ->
+                _uiState.update { it.copy(repeatMode = mode) }
+            }
+        }
+        viewModelScope.launch {
             repository.nowPlaying.collect { nowPlaying ->
                 val trackChanged = _uiState.value.nowPlaying?.track?.id != nowPlaying.track.id
                 _uiState.update { state ->
@@ -83,8 +88,10 @@ class PlayerViewModel(
         }
     }
 
-    fun onFeelingLucky() {
-        repository.skipNext()
-        _effects.trySend(PlayerEffect.ShowMessage("Jumping to something new"))
+    fun onCycleRepeat() = repository.cycleRepeatMode()
+
+    fun onShuffleQueue() {
+        repository.shuffleQueue()
+        _effects.trySend(PlayerEffect.ShowMessage("Queue shuffled"))
     }
 }

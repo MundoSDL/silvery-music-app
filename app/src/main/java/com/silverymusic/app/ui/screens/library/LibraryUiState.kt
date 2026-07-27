@@ -16,6 +16,7 @@ data class LibraryUiState(
     /** True by default — the screen composes before init's first load runs. */
     val isLoading: Boolean = true,
     val error: DataError? = null,
+    val likedCount: Int = 0,
     val selectedTab: LibraryTab = LibraryTab.PLAYLISTS,
     val playlists: List<Playlist> = emptyList(),
     val albums: List<Playlist> = emptyList(),

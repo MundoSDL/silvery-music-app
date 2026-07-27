@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
@@ -25,12 +27,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.silverymusic.app.data.AppContainer
 import com.silverymusic.app.data.model.Artist
 import com.silverymusic.app.data.model.Playlist
+import com.silverymusic.app.theme.CardShape
 import com.silverymusic.app.theme.PillShape
 import com.silverymusic.app.theme.SilveryTheme
 import com.silverymusic.app.ui.components.ArtistCircle
@@ -44,6 +48,7 @@ import com.silverymusic.app.ui.silveryViewModel
 fun LibraryScreen(
     onOpenSearch: () -> Unit,
     onOpenProfileSwitcher: () -> Unit,
+    onOpenLikedSongs: () -> Unit,
     viewModel: LibraryViewModel = silveryViewModel { LibraryViewModel(AppContainer.musicRepository) },
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -61,6 +66,12 @@ fun LibraryScreen(
         SilverySearchBar(
             modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 16.dp),
             onClick = onOpenSearch,
+        )
+
+        LikedSongsShortcut(
+            count = uiState.likedCount,
+            onClick = onOpenLikedSongs,
+            modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 16.dp),
         )
 
         Row(
@@ -119,6 +130,57 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LikedSongsShortcut(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CardShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(49.dp)
+                .clip(CardShape)
+                .background(
+                    Brush.linearGradient(listOf(SilveryTheme.colors.liked, SilveryTheme.colors.artPlaceholder)),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onBackground,
+            )
+        }
+        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(
+                text = "Liked Songs",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+            )
+            Text(
+                text = if (count == 0) "Songs you heart live here" else "$count ${if (count == 1) "song" else "songs"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = SilveryTheme.colors.textTertiary,
+                maxLines = 1,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = SilveryTheme.colors.textTertiary,
+        )
     }
 }
 

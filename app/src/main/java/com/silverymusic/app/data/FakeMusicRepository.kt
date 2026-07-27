@@ -11,6 +11,7 @@ import com.silverymusic.app.data.model.ListeningStatus
 import com.silverymusic.app.data.model.NowPlaying
 import com.silverymusic.app.data.model.Playlist
 import com.silverymusic.app.data.model.Profile
+import com.silverymusic.app.data.model.RepeatMode
 import com.silverymusic.app.data.model.Track
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -250,8 +251,35 @@ class FakeMusicRepository : MusicRepository {
         it.copy(positionMs = (it.durationMs * fraction.coerceIn(0f, 1f)).toLong())
     }
 
-    override fun toggleLike(trackId: String) = _nowPlaying.update {
-        if (it.track.id == trackId) it.copy(track = it.track.copy(isLiked = !it.track.isLiked)) else it
+    private val likedTracksById = LinkedHashMap<String, Track>()
+    private val _likedTracks = MutableStateFlow<List<Track>>(emptyList())
+    override val likedTracks: StateFlow<List<Track>> = _likedTracks.asStateFlow()
+
+    override fun toggleLike(trackId: String) {
+        val liked = trackId !in likedTracksById
+        val source = (_queue.value + _nowPlaying.value.track)
+        if (liked) {
+            source.firstOrNull { it.id == trackId }?.let { likedTracksById[trackId] = it.copy(isLiked = true) }
+        } else {
+            likedTracksById.remove(trackId)
+        }
+        _likedTracks.value = likedTracksById.values.reversed()
+        _queue.update { tracks -> tracks.map { if (it.id == trackId) it.copy(isLiked = liked) else it } }
+        _nowPlaying.update {
+            if (it.track.id == trackId) it.copy(track = it.track.copy(isLiked = liked)) else it
+        }
+    }
+
+    private val _repeatMode = MutableStateFlow(RepeatMode.ALL)
+    override val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
+    override fun cycleRepeatMode() = _repeatMode.update { it.next() }
+
+    override fun shuffleQueue() {
+        val tracks = _queue.value
+        val index = tracks.indexOfFirst { it.id == _nowPlaying.value.track.id }
+        if (index in 0 until tracks.lastIndex) {
+            _queue.value = tracks.subList(0, index + 1) + tracks.subList(index + 1, tracks.size).shuffled()
+        }
     }
 
     override fun startSync(friendName: String) =

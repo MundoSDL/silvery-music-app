@@ -30,6 +30,11 @@ class LibraryViewModel(private val repository: MusicRepository) : ViewModel() {
                 profiles.firstOrNull { it.id == activeId }?.name.orEmpty()
             }.collect { name -> _uiState.update { it.copy(profileName = name) } }
         }
+        viewModelScope.launch {
+            repository.likedTracks.collect { liked ->
+                _uiState.update { it.copy(likedCount = liked.size) }
+            }
+        }
     }
 
     fun onRetry() = load()

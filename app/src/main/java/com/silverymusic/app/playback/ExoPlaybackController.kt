@@ -1,6 +1,7 @@
 package com.silverymusic.app.playback
 
 import android.content.Context
+import android.media.audiofx.Equalizer
 import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.core.net.toUri
@@ -12,9 +13,13 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import com.silverymusic.app.data.model.EqSettings
 import com.silverymusic.app.data.model.ListeningStatus
 import com.silverymusic.app.data.model.NowPlaying
+import com.silverymusic.app.data.model.RepeatMode
 import com.silverymusic.app.data.model.Track
+import kotlin.math.ln
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -51,14 +56,32 @@ class ExoPlaybackController(
     private val _nowPlaying = MutableStateFlow(NowPlaying(track = IDLE_TRACK, sourceLabel = ""))
     override val nowPlaying: StateFlow<NowPlaying> = _nowPlaying.asStateFlow()
 
+    private val _likedTracks = MutableStateFlow<List<Track>>(emptyList())
+    override val likedTracks: StateFlow<List<Track>> = _likedTracks.asStateFlow()
+
+    private val _repeatMode = MutableStateFlow(RepeatMode.ALL)
+    override val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
+
     private var player: ExoPlayer? = null
     private var ticker: Job? = null
 
     /** Index-aligned with the player's media items; unplayable tracks are dropped. */
     private var playerTracks: List<Track> = emptyList()
 
-    /** Likes are session-only in this demo — no database, matching the fake. */
-    private val likedIds = mutableSetOf<String>()
+    /**
+     * Likes are session-only in this demo — no database, matching the fake. The
+     * ordered map keeps the full [Track] (for the Liked Songs list) and preserves
+     * insertion order so newest likes can be shown first.
+     */
+    private val likedTracksById = LinkedHashMap<String, Track>()
+
+    // ---- Equalizer ---------------------------------------------------------
+
+    private var equalizer: Equalizer? = null
+    private var audioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
+
+    /** Last curve requested; re-applied whenever a fresh audio session appears. */
+    private var pendingEq: EqSettings = EqSettings()
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = syncFromPlayer()
@@ -66,6 +89,18 @@ class ExoPlaybackController(
         override fun onPlayerError(error: PlaybackException) {
             // A dead stream must not wedge the UI in a buffering state.
             _nowPlaying.update { it.copy(isPlaying = false, isBuffering = false) }
+        }
+    }
+
+    /**
+     * The graphic EQ has to bind to the output's audio session id, which ExoPlayer
+     * assigns lazily and can change across tracks — so the effect is (re)built here
+     * each time a new session id is reported.
+     */
+    private val analyticsListener = object : AnalyticsListener {
+        override fun onAudioSessionIdChanged(eventTime: AnalyticsListener.EventTime, audioSessionId: Int) {
+            this@ExoPlaybackController.audioSessionId = audioSessionId
+            setupEqualizer(audioSessionId)
         }
     }
 
@@ -152,14 +187,63 @@ class ExoPlaybackController(
     }
 
     override fun toggleLike(trackId: String) {
-        val liked = if (trackId in likedIds) {
-            likedIds.remove(trackId); false
+        val liked = trackId !in likedTracksById
+        if (liked) {
+            // Grab the fullest copy we have of the track so the Liked Songs list
+            // can render it without a re-fetch.
+            val track = _nowPlaying.value.track.takeIf { it.id == trackId }
+                ?: _queue.value.firstOrNull { it.id == trackId }
+            if (track != null) likedTracksById[trackId] = track.copy(isLiked = true)
         } else {
-            likedIds.add(trackId); true
+            likedTracksById.remove(trackId)
         }
+        _likedTracks.value = likedTracksById.values.reversed()
         _queue.update { tracks -> tracks.map { if (it.id == trackId) it.copy(isLiked = liked) else it } }
         _nowPlaying.update {
             if (it.track.id == trackId) it.copy(track = it.track.copy(isLiked = liked)) else it
+        }
+    }
+
+    override fun cycleRepeatMode() {
+        val next = _repeatMode.value.next()
+        _repeatMode.value = next
+        onPlayerThread { player?.repeatMode = next.toPlayerRepeatMode() }
+    }
+
+    override fun shuffleQueue() {
+        val current = _nowPlaying.value.track.id
+        onPlayerThread {
+            val active = player?.takeIf { it.mediaItemCount > 1 }
+            if (active != null) {
+                // Only touch the tail after the current item, so the track that's
+                // playing is never rebuilt or restarted.
+                val currentIndex = active.currentMediaItemIndex
+                val tailStart = currentIndex + 1
+                if (tailStart < active.mediaItemCount) {
+                    val shuffledTail = playerTracks.subList(tailStart, playerTracks.size).shuffled()
+                    active.removeMediaItems(tailStart, active.mediaItemCount)
+                    active.addMediaItems(shuffledTail.map(::mediaItemFor))
+                    playerTracks = playerTracks.subList(0, tailStart) + shuffledTail
+                }
+                _queue.value = playerTracks.map { it.withLike() }
+            } else {
+                // No live player (offline/metadata-only): shuffle everything after
+                // the current track in the visible queue.
+                val tracks = _queue.value
+                val index = tracks.indexOfFirst { it.id == current }
+                if (index >= 0 && index < tracks.lastIndex) {
+                    val head = tracks.subList(0, index + 1)
+                    val tail = tracks.subList(index + 1, tracks.size).shuffled()
+                    _queue.value = head + tail
+                }
+            }
+        }
+    }
+
+    override fun applyEqualizer(settings: EqSettings) {
+        pendingEq = settings
+        onPlayerThread {
+            equalizer?.let { eq -> runCatching { applyEqToEffect(eq, settings) } }
         }
     }
 
@@ -171,11 +255,69 @@ class ExoPlaybackController(
     override fun release() = onPlayerThread {
         ticker?.cancel()
         ticker = null
+        runCatching { equalizer?.release() }
+        equalizer = null
         player?.removeListener(listener)
+        player?.removeAnalyticsListener(analyticsListener)
         player?.release()
         player = null
         playerTracks = emptyList()
         scope.cancel()
+    }
+
+    /**
+     * Binds a hardware [Equalizer] to [sessionId] and pushes the current curve.
+     * Wrapped defensively: some emulators expose no EQ effect and throw, in which
+     * case audio simply plays unprocessed rather than crashing playback.
+     */
+    private fun setupEqualizer(sessionId: Int) {
+        if (sessionId == C.AUDIO_SESSION_ID_UNSET) return
+        runCatching {
+            equalizer?.release()
+            equalizer = Equalizer(0, sessionId).also { applyEqToEffect(it, pendingEq) }
+        }.onFailure { equalizer = null }
+    }
+
+    private fun applyEqToEffect(eq: Equalizer, settings: EqSettings) {
+        // setEnabled returns a status int, so it's a method call, not a property.
+        eq.setEnabled(settings.enabled)
+        if (!settings.enabled) return
+        val range = eq.bandLevelRange // millibels: [min, max]
+        val min = range[0].toInt()
+        val max = range[1].toInt()
+        for (band in 0 until eq.numberOfBands) {
+            val centerHz = eq.getCenterFreq(band.toShort()) / 1000 // milliHz → Hz
+            val gainDb = interpolateGainDb(settings.gains, centerHz)
+            val millibels = (gainDb * 100f).toInt().coerceIn(min, max)
+            eq.setBandLevel(band.toShort(), millibels.toShort())
+        }
+    }
+
+    /**
+     * The UI's seven bands rarely line up with the device's, so a hardware band's
+     * gain is interpolated from the two nearest UI bands in log-frequency space —
+     * which is how the ear spaces them too.
+     */
+    private fun interpolateGainDb(gains: List<Float>, freqHz: Int): Float {
+        if (gains.isEmpty()) return 0f
+        val f = freqHz.toFloat().coerceAtLeast(1f)
+        if (f <= EQ_CENTERS_HZ.first()) return gains.first()
+        if (f >= EQ_CENTERS_HZ.last()) return gains.last()
+        for (i in 0 until EQ_CENTERS_HZ.lastIndex) {
+            val lo = EQ_CENTERS_HZ[i]
+            val hi = EQ_CENTERS_HZ[i + 1]
+            if (f in lo..hi) {
+                val t = (ln(f) - ln(lo)) / (ln(hi) - ln(lo))
+                return gains.getOrElse(i) { 0f } + t * (gains.getOrElse(i + 1) { 0f } - gains.getOrElse(i) { 0f })
+            }
+        }
+        return gains.last()
+    }
+
+    private fun RepeatMode.toPlayerRepeatMode(): Int = when (this) {
+        RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+        RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+        RepeatMode.ONE -> Player.REPEAT_MODE_ONE
     }
 
     private fun requirePlayer(): ExoPlayer = player ?: ExoPlayer.Builder(appContext)
@@ -189,8 +331,9 @@ class ExoPlaybackController(
         .setHandleAudioBecomingNoisy(true)
         .build()
         .also {
-            it.repeatMode = Player.REPEAT_MODE_ALL
+            it.repeatMode = _repeatMode.value.toPlayerRepeatMode()
             it.addListener(listener)
+            it.addAnalyticsListener(analyticsListener)
             player = it
         }
 
@@ -242,7 +385,7 @@ class ExoPlaybackController(
         )
         .build()
 
-    private fun Track.withLike(): Track = copy(isLiked = id in likedIds)
+    private fun Track.withLike(): Track = copy(isLiked = id in likedTracksById)
 
     private inline fun onPlayerThread(crossinline block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) block() else scope.launch { block() }
@@ -250,6 +393,9 @@ class ExoPlaybackController(
 
     private companion object {
         const val POSITION_TICK_MS = 500L
+
+        /** Center frequencies of the UI's seven bands, aligned with EqSettings.BAND_LABELS. */
+        val EQ_CENTERS_HZ = listOf(60f, 150f, 400f, 1000f, 2400f, 6000f, 15000f)
 
         /** Placeholder so the mini player has something to render before first play. */
         val IDLE_TRACK = Track(

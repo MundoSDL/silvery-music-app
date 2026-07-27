@@ -15,6 +15,7 @@ import com.silverymusic.app.data.model.Genre
 import com.silverymusic.app.data.model.NowPlaying
 import com.silverymusic.app.data.model.Playlist
 import com.silverymusic.app.data.model.Profile
+import com.silverymusic.app.data.model.RepeatMode
 import com.silverymusic.app.data.model.Track
 import com.silverymusic.app.data.network.JamendoService
 import com.silverymusic.app.data.network.jamendoResults
@@ -200,6 +201,8 @@ internal class JamendoMusicRepository(
 
     override val nowPlaying: StateFlow<NowPlaying> get() = playback.nowPlaying
     override val queue: StateFlow<List<Track>> get() = playback.queue
+    override val likedTracks: StateFlow<List<Track>> get() = playback.likedTracks
+    override val repeatMode: StateFlow<RepeatMode> get() = playback.repeatMode
 
     override fun playQueue(tracks: List<Track>, startIndex: Int, sourceLabel: String) =
         playback.playQueue(tracks, startIndex, sourceLabel)
@@ -211,6 +214,8 @@ internal class JamendoMusicRepository(
     override fun toggleLike(trackId: String) = playback.toggleLike(trackId)
     override fun startSync(friendName: String) = playback.startSync(friendName)
     override fun endSync() = playback.endSync()
+    override fun cycleRepeatMode() = playback.cycleRepeatMode()
+    override fun shuffleQueue() = playback.shuffleQueue()
 
     // ---- In-memory demo state (delegated, not duplicated) -------------------
 
@@ -226,11 +231,28 @@ internal class JamendoMusicRepository(
     override val discoveryMode: StateFlow<DiscoveryMode> get() = local.discoveryMode
     override fun setDiscoveryMode(mode: DiscoveryMode) = local.setDiscoveryMode(mode)
 
+    // EQ state stays in [local] for the UI to render, but every change is also
+    // pushed to the player so it actually reshapes the audio, not just the curve.
     override val eqSettings: StateFlow<EqSettings> get() = local.eqSettings
-    override fun setEqEnabled(enabled: Boolean) = local.setEqEnabled(enabled)
-    override fun setEqPreset(preset: EqPreset) = local.setEqPreset(preset)
-    override fun setEqBandGain(bandIndex: Int, gainDb: Float) = local.setEqBandGain(bandIndex, gainDb)
-    override fun resetEq() = local.resetEq()
+    override fun setEqEnabled(enabled: Boolean) {
+        local.setEqEnabled(enabled)
+        playback.applyEqualizer(local.eqSettings.value)
+    }
+
+    override fun setEqPreset(preset: EqPreset) {
+        local.setEqPreset(preset)
+        playback.applyEqualizer(local.eqSettings.value)
+    }
+
+    override fun setEqBandGain(bandIndex: Int, gainDb: Float) {
+        local.setEqBandGain(bandIndex, gainDb)
+        playback.applyEqualizer(local.eqSettings.value)
+    }
+
+    override fun resetEq() {
+        local.resetEq()
+        playback.applyEqualizer(local.eqSettings.value)
+    }
 
     override val appSettings: StateFlow<AppSettings> get() = local.appSettings
     override fun setAudioQuality(quality: AudioQuality) = local.setAudioQuality(quality)

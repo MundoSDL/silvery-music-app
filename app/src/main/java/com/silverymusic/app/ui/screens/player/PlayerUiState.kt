@@ -3,6 +3,7 @@ package com.silverymusic.app.ui.screens.player
 import com.silverymusic.app.data.DataError
 import com.silverymusic.app.data.model.Lyrics
 import com.silverymusic.app.data.model.NowPlaying
+import com.silverymusic.app.data.model.RepeatMode
 
 data class PlayerUiState(
     val nowPlaying: NowPlaying? = null,
@@ -11,6 +12,7 @@ data class PlayerUiState(
     val lyrics: Lyrics? = null,
     val isLoadingLyrics: Boolean = false,
     val lyricsError: DataError? = null,
+    val repeatMode: RepeatMode = RepeatMode.ALL,
 ) {
     val hasLyrics: Boolean get() = lyrics?.isEmpty == false
 
