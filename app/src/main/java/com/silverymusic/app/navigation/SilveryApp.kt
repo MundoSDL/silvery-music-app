@@ -106,14 +106,18 @@ fun SilveryApp() {
             ) {
                 composable(Routes.ONBOARDING_WELCOME) {
                     OnboardingWelcomeScreen(
-                        onGetStarted = { navController.navigate(Routes.ONBOARDING_HOW_IT_WORKS) },
-                        onSignIn = { navigateIntoApp() },
+                        onGetStarted = { navController.navigate(Routes.ONBOARDING_SIGNUP_CHOICE) },
+                        // Skipping straight to a guest session still lands on the
+                        // quick tour, so nobody misses where Settings lives.
+                        onSignIn = { navController.navigate(Routes.ONBOARDING_HOW_IT_WORKS) },
                     )
                 }
+                // The tour is the last thing before the app opens — it pops up the
+                // moment onboarding finishes, then drops you into Home.
                 composable(Routes.ONBOARDING_HOW_IT_WORKS) {
                     HowItWorksScreen(
-                        ctaLabel = "Continue",
-                        onCta = { navController.navigate(Routes.ONBOARDING_SIGNUP_CHOICE) },
+                        ctaLabel = "Start Listening",
+                        onCta = { navigateIntoApp() },
                     )
                 }
                 composable(Routes.ONBOARDING_SIGNUP_CHOICE) {
@@ -136,7 +140,8 @@ fun SilveryApp() {
                             "Queue sovereignty — always yours",
                             "Sync Play with friends",
                         ),
-                        onStartListening = { navigateIntoApp() },
+                        onStartListening = { navController.navigate(Routes.ONBOARDING_HOW_IT_WORKS) },
+                        ctaLabel = "Continue",
                     )
                 }
                 composable(Routes.ONBOARDING_GUEST_IN) {
@@ -146,7 +151,8 @@ fun SilveryApp() {
                             "Try the Discovery Mixer",
                             "Learn how we support singers and artists",
                         ),
-                        onStartListening = { navigateIntoApp() },
+                        onStartListening = { navController.navigate(Routes.ONBOARDING_HOW_IT_WORKS) },
+                        ctaLabel = "Continue",
                     )
                 }
 

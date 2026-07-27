@@ -8,8 +8,9 @@ bolted on, no algorithm quietly deciding what you hear next. Just your music, an
 controls that stay in your hands.
 
 It is a **Hypermedia course project at Hochschule Trier** (Trier University of
-Applied Sciences) — a UX/UI design study taken from personas and journey maps all
-the way through to a working Android app.
+Applied Sciences), carried out under the supervision of the school — a UX/UI design
+study taken from personas and journey maps all the way through to a working Android
+app.
 
 ![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?logo=kotlin&logoColor=white)
 ![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)
@@ -128,4 +129,4 @@ The full high-fidelity design lives in Figma:
 
 Music by independent artists via **Jamendo**, used under Creative Commons. Lyrics
 via **Jamendo** and **LRCLIB**. Built for the **Hypermedia** course at **Hochschule
-Trier**.
+Trier**, under the supervision of the school.

@@ -32,6 +32,7 @@ import com.silverymusic.app.theme.SilveryTheme
 fun OnboardingConfirmationScreen(
     checklist: List<String>,
     onStartListening: () -> Unit,
+    ctaLabel: String = "Start Listening",
 ) {
     Column(
         modifier = Modifier
@@ -101,7 +102,7 @@ fun OnboardingConfirmationScreen(
                 .fillMaxWidth()
                 .height(52.dp),
         ) {
-            Text(text = "Start Listening", style = MaterialTheme.typography.titleMedium)
+            Text(text = ctaLabel, style = MaterialTheme.typography.titleMedium)
         }
     }
 }
