@@ -2,7 +2,7 @@
 
 **Music. Just music.**
 
-Silvery is a concept music-streaming app built around one idea — giving the
+Silvery is a concept music-streaming app built around one idea: giving the
 listening experience back to the listener. No feeds, no video tabs, no podcasts
 bolted on, no algorithm quietly deciding what you hear next. Just your music, and
 controls that stay in your hands.
@@ -20,7 +20,7 @@ the way through to a working Android app.
 
 ## About the project
 
-Most streaming apps have grown into everything-stores — social feeds, video,
+Most streaming apps have grown into everything-stores: social feeds, video,
 promotional pushes, autoplay that never stops. Silvery is the argument for the
 opposite: a focused, high-fidelity music app that strips the noise and hands the
 controls back.
