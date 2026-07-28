@@ -91,8 +91,9 @@ fun OnboardingCreateAccountScreen(
         )
 
         Text(
-            text = "Demo build: nothing is sent anywhere and nothing is kept. " +
-                "Your name just labels this session until the app closes.",
+            text = "Demo build: nothing is sent anywhere and no password is kept. " +
+                "Your name is saved on this device to label your profile, so you " +
+                "don't have to sign up again — sign out in Settings to clear it.",
             style = MaterialTheme.typography.bodySmall,
             color = SilveryTheme.colors.textTertiary,
             modifier = Modifier.padding(top = 8.dp, bottom = 32.dp),

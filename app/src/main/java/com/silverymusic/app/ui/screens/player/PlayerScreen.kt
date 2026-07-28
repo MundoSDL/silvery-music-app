@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
@@ -123,6 +125,7 @@ fun PlayerScreen(
                     uiState = uiState,
                     onMinimize = onMinimize,
                     onOpenSync = onOpenSync,
+                    onToggleLike = viewModel::onToggleLike,
                     onTogglePlayPause = viewModel::onTogglePlayPause,
                     onSkipNext = viewModel::onSkipNext,
                     onSkipPrevious = viewModel::onSkipPrevious,
@@ -146,6 +149,7 @@ private fun PlayerContent(
     uiState: PlayerUiState,
     onMinimize: () -> Unit,
     onOpenSync: () -> Unit,
+    onToggleLike: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -273,16 +277,36 @@ private fun PlayerContent(
                 .fillMaxWidth()
                 .padding(horizontal = 32.dp, vertical = 24.dp),
         ) {
-            Text(
-                text = nowPlaying.track.title,
-                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold),
-            )
-            Text(
-                text = nowPlaying.track.artist,
-                style = MaterialTheme.typography.bodyLarge,
-                color = SilveryTheme.colors.textTertiary,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            // Heart sits on the trailing edge of the title row, sized to sit
+            // proportionally beside the 24sp title rather than dominate it.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = nowPlaying.track.title,
+                        style = MaterialTheme.typography.headlineLarge.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = nowPlaying.track.artist,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = SilveryTheme.colors.textTertiary,
+                        modifier = Modifier.padding(top = 2.dp),
+                        maxLines = 1,
+                    )
+                }
+                val liked = nowPlaying.track.isLiked
+                IconButton(
+                    onClick = onToggleLike,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = if (liked) "Unlike" else "Like",
+                        tint = if (liked) SilveryTheme.colors.liked else SilveryTheme.colors.textTertiary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
 
             // While the thumb is held the slider follows the finger; live position
             // only takes over again once the seek has been committed.

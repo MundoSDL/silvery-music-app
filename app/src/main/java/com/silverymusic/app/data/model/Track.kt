@@ -1,5 +1,9 @@
 package com.silverymusic.app.data.model
 
+import kotlinx.serialization.Serializable
+
+/** Serializable so liked tracks survive a restart (see `data.local.LikesStore`). */
+@Serializable
 data class Track(
     val id: String,
     val title: String,

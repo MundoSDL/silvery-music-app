@@ -1,5 +1,9 @@
 package com.silverymusic.app.data.model
 
+import kotlinx.serialization.Serializable
+
+/** Serializable so profiles survive a restart (see `data.local.ProfileStore`). */
+@Serializable
 data class Profile(
     val id: String,
     val name: String,

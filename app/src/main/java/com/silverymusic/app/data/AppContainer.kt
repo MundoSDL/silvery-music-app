@@ -1,15 +1,29 @@
 package com.silverymusic.app.data
 
 import android.content.Context
+import com.silverymusic.app.data.local.LikesStore
+import com.silverymusic.app.data.local.ProfileStore
+import com.silverymusic.app.data.local.SessionStore
+import com.silverymusic.app.data.local.SilveryPrefs
 
 /**
  * Hand-rolled DI. [init] is called once from the Application so the live
- * implementations can reach a Context (ExoPlayer, OkHttp cache); until then the
- * offline fake backs everything, which is also what Compose previews get.
+ * implementations can reach a Context (ExoPlayer, OkHttp cache, on-device
+ * storage); until then the offline fake backs everything, which is also what
+ * Compose previews get.
  */
 object AppContainer {
 
     private var appContext: Context? = null
+
+    /**
+     * On-device stores. Created in [init] so the session, profiles and liked
+     * songs are read back before the first screen composes; null-prefs fallbacks
+     * keep previews and tests entirely in memory.
+     */
+    private var likesStore: LikesStore = LikesStore()
+    private var profileStore: ProfileStore = ProfileStore()
+    private var sessionStore: SessionStore = SessionStore(null)
 
     @Volatile
     private var musicRepositoryOverride: MusicRepository? = null
@@ -21,9 +35,23 @@ object AppContainer {
     @Volatile
     private var playbackRelease: (() -> Unit)? = null
 
-    val authRepository: AuthRepository by lazy { DemoAuthRepository() }
+    /**
+     * Signing in renames the main profile; going guest marks it guest mode; signing
+     * out returns profiles to factory state and drops every saved like.
+     */
+    val authRepository: AuthRepository by lazy {
+        DemoAuthRepository(
+            store = sessionStore,
+            onSessionChanged = { state ->
+                if (state == AuthState.SignedOut) likesStore.clearAll()
+                profileStore.applySession(state)
+            },
+        )
+    }
 
-    private val fallbackMusicRepository: MusicRepository by lazy { FakeMusicRepository() }
+    private val fallbackMusicRepository: MusicRepository by lazy {
+        FakeMusicRepository(profileStore = profileStore, likesStore = likesStore)
+    }
 
     val musicRepository: MusicRepository
         get() = musicRepositoryOverride ?: fallbackMusicRepository
@@ -33,6 +61,12 @@ object AppContainer {
 
     fun init(context: Context) {
         appContext = context.applicationContext
+        val prefs = SilveryPrefs.from(context)
+        sessionStore = SessionStore(prefs)
+        likesStore = LikesStore(prefs)
+        // Switching profile rebinds Liked Songs to that profile's collection.
+        profileStore = ProfileStore(prefs) { profileId -> likesStore.bindProfile(profileId) }
+        likesStore.bindProfile(profileStore.activeProfileId.value)
     }
 
     fun install(music: MusicRepository? = null, lyrics: LyricsRepository? = null) {
@@ -65,12 +99,18 @@ object AppContainer {
         // No client_id means no catalog to browse, so the offline fake stays in
         // place and the app still runs end to end.
         val music = jamendo?.let { service ->
-            val controller = com.silverymusic.app.playback.ExoPlaybackController(context)
+            // One LikesStore across the controller and the local state, so the
+            // player, Liked Songs and the notification all read the same list.
+            val controller = com.silverymusic.app.playback.ExoPlaybackController(
+                context = context,
+                likesStore = likesStore,
+            )
             playbackRelease = controller::release
             com.silverymusic.app.data.repository.JamendoMusicRepository(
                 service = service,
                 playback = controller,
                 dispatcher = dispatcher,
+                local = FakeMusicRepository(profileStore = profileStore, likesStore = likesStore),
             )
         }
 

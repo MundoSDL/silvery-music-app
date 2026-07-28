@@ -1,9 +1,12 @@
 package com.silverymusic.app.playback
 
 import android.content.Context
+import android.content.Intent
 import android.media.audiofx.Equalizer
+import android.os.Bundle
 import android.os.Looper
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -14,6 +17,14 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.session.CommandButton
+import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import com.silverymusic.app.R
+import com.silverymusic.app.data.local.LikesStore
 import com.silverymusic.app.data.model.EqSettings
 import com.silverymusic.app.data.model.ListeningStatus
 import com.silverymusic.app.data.model.NowPlaying
@@ -24,11 +35,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -45,6 +57,8 @@ import kotlinx.coroutines.launch
 @OptIn(UnstableApi::class)
 class ExoPlaybackController(
     context: Context,
+    /** Shared with the repository so likes are one persisted, per-profile list. */
+    private val likesStore: LikesStore = LikesStore(),
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) : PlaybackController {
 
@@ -56,8 +70,7 @@ class ExoPlaybackController(
     private val _nowPlaying = MutableStateFlow(NowPlaying(track = IDLE_TRACK, sourceLabel = ""))
     override val nowPlaying: StateFlow<NowPlaying> = _nowPlaying.asStateFlow()
 
-    private val _likedTracks = MutableStateFlow<List<Track>>(emptyList())
-    override val likedTracks: StateFlow<List<Track>> = _likedTracks.asStateFlow()
+    override val likedTracks: StateFlow<List<Track>> get() = likesStore.likedTracks
 
     private val _repeatMode = MutableStateFlow(RepeatMode.ALL)
     override val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
@@ -65,15 +78,32 @@ class ExoPlaybackController(
     private var player: ExoPlayer? = null
     private var ticker: Job? = null
 
+    /** Media session wrapping [player]; created lazily alongside it. */
+    private var mediaSession: MediaSession? = null
+
+    /** Keeps the notification's custom buttons in step with like/repeat state. */
+    private var customLayoutJob: Job? = null
+
+    /** Guards against re-starting the foreground service on every queue change. */
+    @Volatile
+    private var serviceStarted = false
+
+    private val likeCommand = SessionCommand(ACTION_LIKE, Bundle.EMPTY)
+    private val repeatCommand = SessionCommand(ACTION_REPEAT, Bundle.EMPTY)
+
+    init {
+        // Liked state is per profile, so switching profiles changes which tracks
+        // read as liked. Re-decorate whatever is on screen when the list changes.
+        scope.launch {
+            likesStore.likedTracks.collect {
+                _queue.update { tracks -> tracks.map { track -> track.withLike() } }
+                _nowPlaying.update { it.copy(track = it.track.withLike()) }
+            }
+        }
+    }
+
     /** Index-aligned with the player's media items; unplayable tracks are dropped. */
     private var playerTracks: List<Track> = emptyList()
-
-    /**
-     * Likes are session-only in this demo — no database, matching the fake. The
-     * ordered map keeps the full [Track] (for the Liked Songs list) and preserves
-     * insertion order so newest likes can be shown first.
-     */
-    private val likedTracksById = LinkedHashMap<String, Track>()
 
     // ---- Equalizer ---------------------------------------------------------
 
@@ -84,7 +114,12 @@ class ExoPlaybackController(
     private var pendingEq: EqSettings = EqSettings()
 
     private val listener = object : Player.Listener {
-        override fun onEvents(player: Player, events: Player.Events) = syncFromPlayer()
+        override fun onEvents(player: Player, events: Player.Events) {
+            syncFromPlayer()
+            // Play/pause from the notification hits the player directly rather
+            // than togglePlayPause(), so re-arm the position ticker here too.
+            if (player.isPlaying && ticker?.isActive != true) startTicker()
+        }
 
         override fun onPlayerError(error: PlaybackException) {
             // A dead stream must not wedge the UI in a buffering state.
@@ -102,6 +137,72 @@ class ExoPlaybackController(
             this@ExoPlaybackController.audioSessionId = audioSessionId
             setupEqualizer(audioSessionId)
         }
+    }
+
+    /**
+     * Grants the two extra buttons (like, repeat) on top of the default player
+     * commands and routes their taps back into the controller.
+     */
+    private val sessionCallback = object : MediaSession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                .add(likeCommand)
+                .add(repeatCommand)
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(sessionCommands)
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            when (customCommand.customAction) {
+                ACTION_LIKE -> player?.currentMediaItem?.mediaId?.let { toggleLike(it) }
+                ACTION_REPEAT -> cycleRepeatMode()
+            }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+    }
+
+    /** Two notification buttons whose icons reflect the current like/repeat state. */
+    private fun buildCustomLayout(): List<CommandButton> {
+        val likeButton = CommandButton.Builder()
+            .setSessionCommand(likeCommand)
+            .setIconResId(if (_nowPlaying.value.track.isLiked) R.drawable.ic_like_filled else R.drawable.ic_like)
+            .setDisplayName(if (_nowPlaying.value.track.isLiked) "Unlike" else "Like")
+            .setEnabled(true)
+            .build()
+        val repeatButton = CommandButton.Builder()
+            .setSessionCommand(repeatCommand)
+            .setIconResId(
+                when (_repeatMode.value) {
+                    RepeatMode.OFF -> R.drawable.ic_repeat_off
+                    RepeatMode.ALL -> R.drawable.ic_repeat
+                    RepeatMode.ONE -> R.drawable.ic_repeat_one
+                },
+            )
+            .setDisplayName("Repeat")
+            .setEnabled(true)
+            .build()
+        return listOf(likeButton, repeatButton)
+    }
+
+    private fun ensureServiceStarted() {
+        if (serviceStarted) return
+        // Background-start restrictions can reject this (Android 12+). The
+        // notification is an enhancement, so a rejection must not take playback
+        // down with it — retry on the next play instead.
+        val started = runCatching {
+            ContextCompat.startForegroundService(appContext, Intent(appContext, PlaybackService::class.java))
+        }.isSuccess
+        serviceStarted = started
     }
 
     override fun playQueue(tracks: List<Track>, startIndex: Int, sourceLabel: String) {
@@ -136,6 +237,9 @@ class ExoPlaybackController(
                 play()
             }
             startTicker()
+            // The session/player now exist and are playing, so it's safe to
+            // promote the hosting service to the foreground.
+            ensureServiceStarted()
         }
     }
 
@@ -187,17 +291,12 @@ class ExoPlaybackController(
     }
 
     override fun toggleLike(trackId: String) {
-        val liked = trackId !in likedTracksById
-        if (liked) {
+        val liked = likesStore.toggle(trackId) {
             // Grab the fullest copy we have of the track so the Liked Songs list
             // can render it without a re-fetch.
-            val track = _nowPlaying.value.track.takeIf { it.id == trackId }
+            _nowPlaying.value.track.takeIf { it.id == trackId }
                 ?: _queue.value.firstOrNull { it.id == trackId }
-            if (track != null) likedTracksById[trackId] = track.copy(isLiked = true)
-        } else {
-            likedTracksById.remove(trackId)
         }
-        _likedTracks.value = likedTracksById.values.reversed()
         _queue.update { tracks -> tracks.map { if (it.id == trackId) it.copy(isLiked = liked) else it } }
         _nowPlaying.update {
             if (it.track.id == trackId) it.copy(track = it.track.copy(isLiked = liked)) else it
@@ -252,17 +351,30 @@ class ExoPlaybackController(
 
     override fun endSync() = _nowPlaying.update { it.copy(listeningStatus = ListeningStatus.Solo) }
 
+    /**
+     * Tears the player and session down. Deliberately leaves [scope] alive: the
+     * process can outlive a swipe-away, and a cancelled scope would leave the
+     * controller half-dead on the next launch (no position ticker, no notification
+     * sync). Playing again rebuilds the player, session and collectors.
+     */
     override fun release() = onPlayerThread {
         ticker?.cancel()
         ticker = null
+        customLayoutJob?.cancel()
+        customLayoutJob = null
         runCatching { equalizer?.release() }
         equalizer = null
+        // Release the session before the player it wraps, then drop the shared handles.
+        mediaSession?.release()
+        mediaSession = null
+        PlaybackSessionHolder.clear()
+        serviceStarted = false
         player?.removeListener(listener)
         player?.removeAnalyticsListener(analyticsListener)
         player?.release()
         player = null
         playerTracks = emptyList()
-        scope.cancel()
+        _nowPlaying.update { it.copy(isPlaying = false, isBuffering = false, positionMs = 0L) }
     }
 
     /**
@@ -335,6 +447,24 @@ class ExoPlaybackController(
             it.addListener(listener)
             it.addAnalyticsListener(analyticsListener)
             player = it
+
+            // Wrap the same player in a session and publish it so PlaybackService
+            // can surface the notification. Built before the service is started,
+            // so onGetSession always finds it.
+            val session = MediaSession.Builder(appContext, it)
+                .setCallback(sessionCallback)
+                .setCustomLayout(buildCustomLayout())
+                .build()
+            mediaSession = session
+            PlaybackSessionHolder.publish(session, ::release)
+
+            // Keep the notification's like/repeat icons in step with state.
+            customLayoutJob?.cancel()
+            customLayoutJob = scope.launch {
+                combine(nowPlaying, repeatMode) { np, mode -> np.track.isLiked to mode }
+                    .distinctUntilChanged()
+                    .collect { mediaSession?.setCustomLayout(buildCustomLayout()) }
+            }
         }
 
     private fun syncFromPlayer() {
@@ -385,7 +515,7 @@ class ExoPlaybackController(
         )
         .build()
 
-    private fun Track.withLike(): Track = copy(isLiked = id in likedTracksById)
+    private fun Track.withLike(): Track = copy(isLiked = likesStore.isLiked(id))
 
     private inline fun onPlayerThread(crossinline block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) block() else scope.launch { block() }
@@ -393,6 +523,10 @@ class ExoPlaybackController(
 
     private companion object {
         const val POSITION_TICK_MS = 500L
+
+        /** Custom session-command actions for the two extra notification buttons. */
+        const val ACTION_LIKE = "com.silverymusic.action.LIKE"
+        const val ACTION_REPEAT = "com.silverymusic.action.REPEAT"
 
         /** Center frequencies of the UI's seven bands, aligned with EqSettings.BAND_LABELS. */
         val EQ_CENTERS_HZ = listOf(60f, 150f, 400f, 1000f, 2400f, 6000f, 15000f)

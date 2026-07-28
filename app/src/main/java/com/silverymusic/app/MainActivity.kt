@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.silverymusic.app.data.AppContainer
 import com.silverymusic.app.navigation.SilveryApp
 import com.silverymusic.app.theme.SilveryTheme
 
@@ -19,9 +18,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        // isFinishing guards against a rotation tearing down the player mid-track.
-        if (isFinishing) AppContainer.releasePlayback()
-    }
+    // Playback now lives in PlaybackService so it can keep running while the app is
+    // backgrounded; the service releases it (on swipe-away or destroy), not the Activity.
 }

@@ -39,6 +39,7 @@ import com.silverymusic.app.ui.components.SectionHeader
 import com.silverymusic.app.ui.components.SilverySearchBar
 import com.silverymusic.app.ui.components.TabScreenHeader
 import com.silverymusic.app.ui.components.TrackRow
+import com.silverymusic.app.ui.screens.seeall.SeeAllSection
 import com.silverymusic.app.ui.silveryViewModel
 
 @Composable
@@ -46,6 +47,7 @@ fun DiscoverScreen(
     onOpenSearch: () -> Unit,
     onOpenProfileSwitcher: () -> Unit,
     onOpenDiscoveryControl: () -> Unit,
+    onOpenSeeAll: (SeeAllSection) -> Unit,
     viewModel: DiscoverViewModel = silveryViewModel { DiscoverViewModel(AppContainer.musicRepository) },
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -113,7 +115,11 @@ fun DiscoverScreen(
             if (uiState.browseGenres.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SectionHeader(title = "Browse Genres", trailingText = "See all")
+                        SectionHeader(
+                            title = "Browse Genres",
+                            trailingText = "See all",
+                            onTrailingClick = { onOpenSeeAll(SeeAllSection.BROWSE_GENRES) },
+                        )
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 24.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -128,7 +134,11 @@ fun DiscoverScreen(
             if (uiState.yourArtists.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SectionHeader(title = "Your Artists", trailingText = "See all")
+                        SectionHeader(
+                            title = "Your Artists",
+                            trailingText = "See all",
+                            onTrailingClick = { onOpenSeeAll(SeeAllSection.YOUR_ARTISTS) },
+                        )
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 24.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),

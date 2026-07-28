@@ -10,16 +10,24 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.silverymusic.app.data.AppContainer
 import com.silverymusic.app.ui.components.BottomNavBar
 import com.silverymusic.app.ui.components.BottomTab
@@ -41,6 +49,8 @@ import com.silverymusic.app.ui.screens.profiles.ManageProfilesScreen
 import com.silverymusic.app.ui.screens.profileswitcher.ProfileSwitcherScreen
 import com.silverymusic.app.ui.screens.queue.QueueSheetScreen
 import com.silverymusic.app.ui.screens.search.SearchScreen
+import com.silverymusic.app.ui.screens.seeall.SeeAllScreen
+import com.silverymusic.app.ui.screens.seeall.SeeAllSection
 import com.silverymusic.app.ui.screens.settings.SettingsScreen
 import com.silverymusic.app.ui.screens.sync.SyncSheetScreen
 
@@ -73,8 +83,23 @@ fun SilveryApp() {
     val showChrome = currentRoute in chromeRoutes
     val nowPlaying by AppContainer.musicRepository.nowPlaying.collectAsState()
 
+    // Ask once for notification permission on Android 13+ so the media
+    // notification can post. Denial is fine — playback still works without it.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val notificationPermission = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { /* result ignored — non-blocking */ }
+        LaunchedEffect(Unit) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     fun openSearch() {
         navController.navigate(Routes.SEARCH) { launchSingleTop = true }
+    }
+
+    fun openSeeAll(section: SeeAllSection) {
+        navController.navigate(Routes.seeAll(section.name)) { launchSingleTop = true }
     }
 
     fun navigateToTab(tab: BottomTab) {
@@ -95,7 +120,12 @@ fun SilveryApp() {
         Box(modifier = Modifier.weight(1f)) {
             NavHost(
                 navController = navController,
-                startDestination = Routes.ONBOARDING_WELCOME,
+                // Onboarding is a first-run step: once the user has signed in or
+                // chosen guest mode, that choice is on device and the app opens
+                // straight to Home. Read once so it can't change mid-session.
+                startDestination = remember {
+                    if (AppContainer.authRepository.isOnboarded) Routes.HOME else Routes.ONBOARDING_WELCOME
+                },
                 // A single quick cross-fade everywhere makes moving between tabs,
                 // Search and detail screens read as one continuous surface rather
                 // than a stack of separate pages.
@@ -160,6 +190,7 @@ fun SilveryApp() {
                     HomeScreen(
                         onOpenSearch = { openSearch() },
                         onOpenProfileSwitcher = { navController.navigate(Routes.PROFILE_SWITCHER) },
+                        onOpenSeeAll = ::openSeeAll,
                     )
                 }
                 composable(Routes.DISCOVER) {
@@ -167,7 +198,15 @@ fun SilveryApp() {
                         onOpenSearch = { openSearch() },
                         onOpenProfileSwitcher = { navController.navigate(Routes.PROFILE_SWITCHER) },
                         onOpenDiscoveryControl = { navController.navigate(Routes.DISCOVERY_CONTROL) },
+                        onOpenSeeAll = ::openSeeAll,
                     )
+                }
+                composable(
+                    Routes.SEE_ALL,
+                    arguments = listOf(navArgument(Routes.SEE_ALL_ARG) { type = NavType.StringType }),
+                ) { backStackEntry ->
+                    val section = SeeAllSection.fromKey(backStackEntry.arguments?.getString(Routes.SEE_ALL_ARG))
+                    SeeAllScreen(section = section, onBack = { navController.popBackStack() })
                 }
                 composable(Routes.LIBRARY) {
                     LibraryScreen(
@@ -236,6 +275,13 @@ fun SilveryApp() {
                         onOpenDiscoveryControl = { navController.navigate(Routes.DISCOVERY_CONTROL) },
                         onOpenManageProfiles = { navController.navigate(Routes.MANAGE_PROFILES) },
                         onOpenHowItWorks = { navController.navigate(Routes.HOW_IT_WORKS) },
+                        // Wipe the whole back stack so Back can't return into the
+                        // signed-out app.
+                        onSignedOut = {
+                            navController.navigate(Routes.ONBOARDING_WELCOME) {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                            }
+                        },
                     )
                 }
                 composable(Routes.HOW_IT_WORKS) {

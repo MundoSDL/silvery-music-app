@@ -2,6 +2,62 @@
 
 All notable changes to the Silvery Music app are documented here. Newest first.
 
+## v0.2.5 — 2026-07-28
+
+The app now remembers you, plays from the notification shade, and every "See all"
+actually goes somewhere.
+
+### New
+
+- **"See all" opens a full list.** The link beside Recently Played, Made For You,
+  Your Top Genres, Your Artists and Browse Genres was previously decorative text.
+  Each now opens a dedicated screen listing everything in that section, with the
+  same tap-to-play behaviour as the rest of the app.
+- **Now Playing in the notification shade and on the lockscreen.** Playback runs
+  in a media session service, so you can see what's playing and control it
+  without opening the app: play/pause, previous, next, plus **like** and
+  **repeat** buttons whose icons follow the current state. Swiping the app away
+  from Recents stops playback and clears the notification.
+- **A like button on the player.** The heart sits on the trailing edge of the
+  track title, above the progress bar, and stays in step with the mini player,
+  Liked Songs and the notification.
+- **The app remembers you.** Onboarding runs once: after you create an account or
+  continue as a guest, that choice is saved on the device and later launches open
+  straight to Home.
+- **Liked songs are saved on your phone** and survive a restart. Each profile
+  keeps its own collection, so switching to the kid profile shows that profile's
+  liked songs rather than the main account's.
+- **Your name becomes your profile.** The name entered at sign-up names the main
+  profile; continuing as a guest labels it **Guest**. The kid profile stays
+  alongside it either way as a demo of profile switching.
+- **Sign out**, under **Settings → Account**. It asks first and says exactly what
+  it clears — the saved session, your profiles and every liked song — then
+  returns to onboarding.
+
+### Fixed
+
+- **The app no longer crashes shortly after playback starts.** The playback
+  service never registered its media session, so no notification was posted and
+  Android shut the app down for failing to start in the foreground in time. This
+  was also why nothing appeared in the notification shade — one cause, both
+  symptoms.
+- **Playback state no longer half-breaks after the app is swiped away.** If the
+  process survived, reopening the app left a player that produced sound but never
+  advanced the progress bar.
+- The progress bar now keeps moving when playback is started from the
+  notification rather than from inside the app.
+- The version shown in Settings is read from the build, so it can't drift out of
+  date again.
+
+### Under the hood
+
+- Persistence is SharedPreferences plus JSON — no new dependencies and no
+  database. Session, profiles and per-profile likes each have a small store, all
+  of which fall back to memory for previews and tests.
+- Twelve Robolectric tests cover the persistence behaviour by rebuilding the
+  stores over the same storage, which is what a fresh process does.
+- The first navigation route to take an argument (`see_all/{section}`).
+
 ## v0.2.0 — 2026-07-27
 
 Player controls, a working equalizer, Liked Songs, and smoother navigation.

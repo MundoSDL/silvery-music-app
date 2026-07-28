@@ -20,6 +20,11 @@ object Routes {
     const val SYNC_SHEET = "sync_sheet"
     const val QUEUE_SHEET = "queue_sheet"
 
+    /** Full list for a home/discover section. [SEE_ALL_ARG] carries the section key. */
+    const val SEE_ALL_ARG = "section"
+    const val SEE_ALL = "see_all/{$SEE_ALL_ARG}"
+    fun seeAll(section: String) = "see_all/$section"
+
     const val SETTINGS = "settings"
     const val HOW_IT_WORKS = "how_it_works"
     const val EQ_PANEL = "eq_panel"

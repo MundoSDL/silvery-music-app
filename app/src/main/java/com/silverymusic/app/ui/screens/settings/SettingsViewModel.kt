@@ -2,6 +2,7 @@ package com.silverymusic.app.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.silverymusic.app.data.AuthRepository
 import com.silverymusic.app.data.MusicRepository
 import com.silverymusic.app.data.model.AppSettings
 import com.silverymusic.app.data.model.AudioQuality
@@ -18,9 +19,13 @@ data class SettingsUiState(
     val discoveryMode: DiscoveryMode = DiscoveryMode.BALANCED,
     val activeProfileName: String = "",
     val showQualityPicker: Boolean = false,
+    val showSignOutConfirm: Boolean = false,
 )
 
-class SettingsViewModel(private val repository: MusicRepository) : ViewModel() {
+class SettingsViewModel(
+    private val repository: MusicRepository,
+    private val authRepository: AuthRepository,
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -46,6 +51,15 @@ class SettingsViewModel(private val repository: MusicRepository) : ViewModel() {
     fun onQualitySelected(quality: AudioQuality) {
         repository.setAudioQuality(quality)
         _uiState.update { it.copy(showQualityPicker = false) }
+    }
+
+    fun onSignOutRequested() = _uiState.update { it.copy(showSignOutConfirm = true) }
+    fun onSignOutDismissed() = _uiState.update { it.copy(showSignOutConfirm = false) }
+
+    /** Clears the saved session, resets profiles and drops every saved like. */
+    fun onSignOutConfirmed() {
+        _uiState.update { it.copy(showSignOutConfirm = false) }
+        authRepository.signOut()
     }
 
     fun onGaplessChange(enabled: Boolean) = repository.setGaplessPlayback(enabled)

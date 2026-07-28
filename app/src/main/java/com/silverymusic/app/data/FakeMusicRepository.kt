@@ -1,5 +1,7 @@
 package com.silverymusic.app.data
 
+import com.silverymusic.app.data.local.LikesStore
+import com.silverymusic.app.data.local.ProfileStore
 import com.silverymusic.app.data.model.AppSettings
 import com.silverymusic.app.data.model.Artist
 import com.silverymusic.app.data.model.AudioQuality
@@ -23,7 +25,11 @@ import kotlinx.coroutines.flow.update
  * the live Jamendo implementation so Compose previews, unit tests and a
  * no-network demo all still work.
  */
-class FakeMusicRepository : MusicRepository {
+class FakeMusicRepository(
+    /** In-memory by default; the container passes device-backed stores at runtime. */
+    private val profileStore: ProfileStore = ProfileStore(),
+    private val likesStore: LikesStore = LikesStore(),
+) : MusicRepository {
 
     private val glassCeiling = Track("t1", "Glass Ceiling", "The Hollow", "Indie", durationMs = 251_000)
     private val neonUndertow = Track("t2", "Neon Undertow", "Mira Lane", "Ambient", durationMs = 222_000)
@@ -128,44 +134,16 @@ class FakeMusicRepository : MusicRepository {
         sampleTracks.filter { it.artist.equals(artist.name, ignoreCase = true) }.ifEmpty { sampleTracks },
     )
 
-    private val _profiles = MutableStateFlow(
-        listOf(
-            Profile("u1", "John Doe", "Main profile", isKid = false, accentIndex = 0, isRemovable = false),
-            Profile("u2", "Emma", "Kid profile · filtered content", isKid = true, accentIndex = 3),
-        ),
-    )
-    override val profiles: StateFlow<List<Profile>> = _profiles.asStateFlow()
+    override val profiles: StateFlow<List<Profile>> get() = profileStore.profiles
+    override val activeProfileId: StateFlow<String> get() = profileStore.activeProfileId
+    override fun selectProfile(profileId: String) = profileStore.select(profileId)
 
-    private val _activeProfileId = MutableStateFlow("u1")
-    override val activeProfileId: StateFlow<String> = _activeProfileId.asStateFlow()
-    override fun selectProfile(profileId: String) {
-        _activeProfileId.value = profileId
-    }
+    override fun addProfile(name: String, isKid: Boolean, accentIndex: Int) =
+        profileStore.add(name, isKid, accentIndex)
 
-    private var nextProfileId = 3
+    override fun renameProfile(profileId: String, name: String) = profileStore.rename(profileId, name)
 
-    override fun addProfile(name: String, isKid: Boolean, accentIndex: Int) {
-        _profiles.update {
-            it + Profile(
-                id = "u${nextProfileId++}",
-                name = name,
-                subtitle = if (isKid) "Kid profile · filtered content" else "Standard profile",
-                isKid = isKid,
-                accentIndex = accentIndex,
-            )
-        }
-    }
-
-    override fun renameProfile(profileId: String, name: String) {
-        _profiles.update { profiles -> profiles.map { if (it.id == profileId) it.copy(name = name) else it } }
-    }
-
-    override fun removeProfile(profileId: String) {
-        _profiles.update { profiles -> profiles.filterNot { it.id == profileId && it.isRemovable } }
-        if (_activeProfileId.value == profileId) {
-            _profiles.value.firstOrNull()?.let { _activeProfileId.value = it.id }
-        }
-    }
+    override fun removeProfile(profileId: String) = profileStore.remove(profileId)
 
     private val _discoveryMode = MutableStateFlow(DiscoveryMode.BALANCED)
     override val discoveryMode: StateFlow<DiscoveryMode> = _discoveryMode.asStateFlow()
@@ -251,19 +229,12 @@ class FakeMusicRepository : MusicRepository {
         it.copy(positionMs = (it.durationMs * fraction.coerceIn(0f, 1f)).toLong())
     }
 
-    private val likedTracksById = LinkedHashMap<String, Track>()
-    private val _likedTracks = MutableStateFlow<List<Track>>(emptyList())
-    override val likedTracks: StateFlow<List<Track>> = _likedTracks.asStateFlow()
+    override val likedTracks: StateFlow<List<Track>> get() = likesStore.likedTracks
 
     override fun toggleLike(trackId: String) {
-        val liked = trackId !in likedTracksById
-        val source = (_queue.value + _nowPlaying.value.track)
-        if (liked) {
-            source.firstOrNull { it.id == trackId }?.let { likedTracksById[trackId] = it.copy(isLiked = true) }
-        } else {
-            likedTracksById.remove(trackId)
+        val liked = likesStore.toggle(trackId) {
+            (_queue.value + _nowPlaying.value.track).firstOrNull { it.id == trackId }
         }
-        _likedTracks.value = likedTracksById.values.reversed()
         _queue.update { tracks -> tracks.map { if (it.id == trackId) it.copy(isLiked = liked) else it } }
         _nowPlaying.update {
             if (it.track.id == trackId) it.copy(track = it.track.copy(isLiked = liked)) else it

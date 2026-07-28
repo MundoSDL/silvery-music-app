@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.silverymusic.app.BuildConfig
 import com.silverymusic.app.data.AppContainer
 import com.silverymusic.app.data.model.AudioQuality
 import com.silverymusic.app.theme.SilveryTheme
@@ -39,7 +40,10 @@ fun SettingsScreen(
     onOpenDiscoveryControl: () -> Unit,
     onOpenManageProfiles: () -> Unit,
     onOpenHowItWorks: () -> Unit,
-    viewModel: SettingsViewModel = silveryViewModel { SettingsViewModel(AppContainer.musicRepository) },
+    onSignedOut: () -> Unit,
+    viewModel: SettingsViewModel = silveryViewModel {
+        SettingsViewModel(AppContainer.musicRepository, AppContainer.authRepository)
+    },
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val settings = uiState.settings
@@ -118,6 +122,11 @@ fun SettingsScreen(
                     value = uiState.activeProfileName,
                     onClick = onOpenManageProfiles,
                 )
+                SettingsDivider()
+                SettingsNavRow(
+                    title = "Sign out",
+                    onClick = viewModel::onSignOutRequested,
+                )
             }
 
             SettingsSection(title = "About") {
@@ -128,7 +137,8 @@ fun SettingsScreen(
             }
 
             Text(
-                text = "Silvery · Version 0.1.0",
+                // Read from the build so it can't drift from the released version.
+                text = "Silvery · Version ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodySmall,
                 color = SilveryTheme.colors.textMuted,
                 modifier = Modifier.padding(top = 32.dp),
@@ -144,6 +154,47 @@ fun SettingsScreen(
             onDismiss = { viewModel.onQualityPickerVisibilityChange(false) },
         )
     }
+
+    if (uiState.showSignOutConfirm) {
+        SignOutDialog(
+            onConfirm = {
+                viewModel.onSignOutConfirmed()
+                onSignedOut()
+            },
+            onDismiss = viewModel::onSignOutDismissed,
+        )
+    }
+}
+
+/** Signing out wipes saved data, so it asks first and says exactly what goes. */
+@Composable
+private fun SignOutDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SilveryTheme.colors.surfaceAlt,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = SilveryTheme.colors.textSecondary,
+        title = { Text(text = "Sign out?") },
+        text = {
+            Text(
+                text = "This clears the session saved on this device, resets your profiles " +
+                    "and removes every liked song. You'll start again from onboarding.",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(text = "Sign out", color = SilveryTheme.colors.liked)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "Cancel", color = MaterialTheme.colorScheme.onSurface)
+            }
+        },
+    )
 }
 
 @Composable

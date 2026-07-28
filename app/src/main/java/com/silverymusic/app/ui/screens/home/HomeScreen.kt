@@ -24,12 +24,14 @@ import com.silverymusic.app.ui.components.PlaylistTile
 import com.silverymusic.app.ui.components.SectionHeader
 import com.silverymusic.app.ui.components.SilverySearchBar
 import com.silverymusic.app.ui.components.TabScreenHeader
+import com.silverymusic.app.ui.screens.seeall.SeeAllSection
 import com.silverymusic.app.ui.silveryViewModel
 
 @Composable
 fun HomeScreen(
     onOpenSearch: () -> Unit,
     onOpenProfileSwitcher: () -> Unit,
+    onOpenSeeAll: (SeeAllSection) -> Unit,
     viewModel: HomeViewModel = silveryViewModel { HomeViewModel(AppContainer.musicRepository) },
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -65,7 +67,11 @@ fun HomeScreen(
             if (uiState.recentlyPlayed.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SectionHeader(title = "Recently Played", trailingText = "See all")
+                        SectionHeader(
+                            title = "Recently Played",
+                            trailingText = "See all",
+                            onTrailingClick = { onOpenSeeAll(SeeAllSection.RECENTLY_PLAYED) },
+                        )
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 24.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -80,7 +86,11 @@ fun HomeScreen(
             if (uiState.madeForYou.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SectionHeader(title = "Made For You", trailingText = "See all")
+                        SectionHeader(
+                            title = "Made For You",
+                            trailingText = "See all",
+                            onTrailingClick = { onOpenSeeAll(SeeAllSection.MADE_FOR_YOU) },
+                        )
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 24.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -95,7 +105,11 @@ fun HomeScreen(
             if (uiState.topGenres.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SectionHeader(title = "Your Top Genres")
+                        SectionHeader(
+                            title = "Your Top Genres",
+                            trailingText = "See all",
+                            onTrailingClick = { onOpenSeeAll(SeeAllSection.TOP_GENRES) },
+                        )
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 24.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -110,7 +124,11 @@ fun HomeScreen(
             if (uiState.yourArtists.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SectionHeader(title = "Your Artists", trailingText = "See all")
+                        SectionHeader(
+                            title = "Your Artists",
+                            trailingText = "See all",
+                            onTrailingClick = { onOpenSeeAll(SeeAllSection.YOUR_ARTISTS) },
+                        )
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 24.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
