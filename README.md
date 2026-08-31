@@ -120,6 +120,10 @@ Jamendo, with lyrics from Jamendo and LRCLIB.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what's changed across versions.
 
+## Try it live
+
+No install needed: [play it in the browser via Appetize.io](https://appetize.io/app/b_emzzlhv7ptazji5l3h7a52mdma). Free-tier sessions cap at 3 minutes — just relaunch if it cuts off mid-session.
+
 ## Design files
 
 The full high-fidelity design lives in Figma:
