@@ -24,3 +24,12 @@ jobs:
 
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleDebug
+
+      # Downloadable from the run's summary page for testing on a device.
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: silvery-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
