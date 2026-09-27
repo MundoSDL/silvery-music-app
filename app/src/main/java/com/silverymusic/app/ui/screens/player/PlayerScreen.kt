@@ -1,11 +1,22 @@
 package com.silverymusic.app.ui.screens.player
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,14 +36,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -53,17 +60,25 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -75,6 +90,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.silverymusic.app.data.AppContainer
 import com.silverymusic.app.data.DataError
@@ -86,6 +102,13 @@ import com.silverymusic.app.data.model.formatDuration
 import com.silverymusic.app.theme.SilveryTheme
 import com.silverymusic.app.ui.components.Artwork
 import com.silverymusic.app.ui.components.DataStatePanel
+import com.silverymusic.app.ui.components.LikeButton
+import com.silverymusic.app.ui.components.PlayPauseIcon
+import com.silverymusic.app.ui.motion.LocalReducedMotion
+import com.silverymusic.app.ui.motion.SharedArtworkKey
+import com.silverymusic.app.ui.motion.rememberArtworkAccent
+import com.silverymusic.app.ui.motion.rememberSmoothPositionMs
+import com.silverymusic.app.ui.motion.sharedPlayerElement
 import com.silverymusic.app.ui.silveryViewModel
 
 @Composable
@@ -118,7 +141,23 @@ fun PlayerScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         val nowPlaying = uiState.nowPlaying
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        // The canvas takes a soft wash of the cover's colour and eases into the
+        // next one whenever the track changes.
+        val background = MaterialTheme.colorScheme.background
+        val accent = rememberArtworkAccent(url = nowPlaying?.track?.artworkUrl, fallback = background)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to accent.value.copy(alpha = 0.55f),
+                            0.7f to background,
+                        ),
+                    )
+                }
+                .padding(padding),
+        ) {
             if (nowPlaying != null) {
                 PlayerContent(
                     nowPlaying = nowPlaying,
@@ -168,6 +207,23 @@ private fun PlayerContent(
     val dragOffset = remember { Animatable(0f) }
     val dismissThresholdPx = with(LocalDensity.current) { 160.dp.toPx() }
     val dragProgress = (dragOffset.value / dismissThresholdPx).coerceIn(0f, 1f)
+
+    // Which way the cover slides on the next track change: +1 for next, -1 for
+    // previous. Settles back to forward afterwards, so an auto-advance at the
+    // end of a track always moves forward.
+    var skipDirection by remember { mutableIntStateOf(1) }
+    LaunchedEffect(nowPlaying.track.id) {
+        delay(ARTWORK_SLIDE_MS.toLong() + 80L)
+        skipDirection = 1
+    }
+    val skipNext = {
+        skipDirection = 1
+        onSkipNext()
+    }
+    val skipPrevious = {
+        skipDirection = -1
+        onSkipPrevious()
+    }
 
     Column(
         modifier = Modifier
@@ -248,24 +304,18 @@ private fun PlayerContent(
                         error = uiState.lyricsError,
                         isEmpty = uiState.lyricsAreEmpty,
                         positionMs = nowPlaying.positionMs,
+                        isPlaying = nowPlaying.isPlaying,
+                        durationMs = nowPlaying.durationMs,
                         onRetry = onRetryLyrics,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Artwork(
-                            url = nowPlaying.track.artworkUrl,
-                            contentDescription = "${nowPlaying.track.title} cover art",
-                            shape = MaterialTheme.shapes.large,
-                            placeholder = Brush.verticalGradient(
-                                listOf(
-                                    SilveryTheme.colors.artPlaceholder,
-                                    MaterialTheme.colorScheme.background,
-                                ),
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f),
+                        ArtworkStage(
+                            nowPlaying = nowPlaying,
+                            direction = { skipDirection },
+                            onSwipeNext = skipNext,
+                            onSwipePrevious = skipPrevious,
                         )
                     }
                 }
@@ -294,57 +344,16 @@ private fun PlayerContent(
                         maxLines = 1,
                     )
                 }
-                val liked = nowPlaying.track.isLiked
-                IconButton(
-                    onClick = onToggleLike,
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    Icon(
-                        imageVector = if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        contentDescription = if (liked) "Unlike" else "Like",
-                        tint = if (liked) SilveryTheme.colors.liked else SilveryTheme.colors.textTertiary,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
+                // Full 48dp touch target; the icon itself stays small beside the title.
+                LikeButton(
+                    liked = nowPlaying.track.isLiked,
+                    onToggle = onToggleLike,
+                    iconSize = 22.dp,
+                    inactiveTint = SilveryTheme.colors.textTertiary,
+                )
             }
 
-            // While the thumb is held the slider follows the finger; live position
-            // only takes over again once the seek has been committed.
-            var dragFraction by remember { mutableStateOf<Float?>(null) }
-            Slider(
-                value = dragFraction ?: nowPlaying.positionFraction,
-                onValueChange = { dragFraction = it },
-                onValueChangeFinished = {
-                    dragFraction?.let(onSeek)
-                    dragFraction = null
-                },
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.onBackground,
-                    activeTrackColor = MaterialTheme.colorScheme.onBackground,
-                    inactiveTrackColor = SilveryTheme.colors.surfaceAlt,
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                val elapsed = dragFraction
-                    ?.let { formatDuration((it * nowPlaying.durationMs).toLong()) }
-                    ?: nowPlaying.elapsedLabel
-                Text(
-                    text = elapsed,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SilveryTheme.colors.textTertiary,
-                )
-                Text(
-                    text = if (nowPlaying.isBuffering) "Buffering…" else nowPlaying.remainingLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SilveryTheme.colors.textTertiary,
-                )
-            }
+            Scrubber(nowPlaying = nowPlaying, onSeek = onSeek)
 
             Row(
                 modifier = Modifier
@@ -354,7 +363,7 @@ private fun PlayerContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RepeatButton(mode = uiState.repeatMode, onClick = onCycleRepeat)
-                IconButton(onClick = onSkipPrevious) {
+                IconButton(onClick = skipPrevious) {
                     Icon(imageVector = Icons.Filled.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(32.dp))
                 }
                 Box(
@@ -373,15 +382,14 @@ private fun PlayerContent(
                             modifier = Modifier.size(26.dp),
                         )
                     } else {
-                        Icon(
-                            imageVector = if (nowPlaying.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (nowPlaying.isPlaying) "Pause" else "Play",
+                        PlayPauseIcon(
+                            isPlaying = nowPlaying.isPlaying,
                             tint = MaterialTheme.colorScheme.background,
-                            modifier = Modifier.size(32.dp),
+                            size = 32.dp,
                         )
                     }
                 }
-                IconButton(onClick = onSkipNext) {
+                IconButton(onClick = skipNext) {
                     Icon(imageVector = Icons.Filled.SkipNext, contentDescription = "Next", modifier = Modifier.size(32.dp))
                 }
                 // Shuffle is a one-shot "randomise what's coming up", not a toggle —
@@ -411,6 +419,146 @@ private fun PlayerContent(
                 PlayerActionButton(icon = Icons.Filled.QueueMusic, label = "Queue", onClick = onOpenQueue)
                 PlayerActionButton(icon = Icons.Filled.GraphicEq, label = "EQ", onClick = onOpenEq)
             }
+        }
+    }
+}
+
+/**
+ * Seek bar plus elapsed and remaining time. Its own composable because it reads
+ * the per-frame position, and only this small piece should recompose for that.
+ */
+@Composable
+private fun Scrubber(nowPlaying: NowPlaying, onSeek: (Float) -> Unit) {
+    Column {
+        // While the thumb is held the slider follows the finger; live position
+        // only takes over again once the seek has been committed.
+        var dragFraction by remember { mutableStateOf<Float?>(null) }
+        // Glides between the controller's half-second position reports.
+        val smoothPosition by rememberSmoothPositionMs(
+            nowPlaying.positionMs,
+            nowPlaying.isPlaying,
+            nowPlaying.durationMs,
+        )
+        val smoothFraction = if (nowPlaying.durationMs > 0L) {
+            (smoothPosition.toFloat() / nowPlaying.durationMs).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        Slider(
+            value = dragFraction ?: smoothFraction,
+            onValueChange = { dragFraction = it },
+            onValueChangeFinished = {
+                dragFraction?.let(onSeek)
+                dragFraction = null
+            },
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.onBackground,
+                activeTrackColor = MaterialTheme.colorScheme.onBackground,
+                inactiveTrackColor = SilveryTheme.colors.surfaceAlt,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            val elapsed = dragFraction
+                ?.let { formatDuration((it * nowPlaying.durationMs).toLong()) }
+                ?: nowPlaying.elapsedLabel
+            Text(
+                text = elapsed,
+                style = MaterialTheme.typography.bodySmall,
+                color = SilveryTheme.colors.textTertiary,
+            )
+            Text(
+                text = if (nowPlaying.isBuffering) "Buffering…" else nowPlaying.remainingLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = SilveryTheme.colors.textTertiary,
+            )
+        }
+    }
+}
+
+/** How long a cover takes to slide across when the track changes. */
+private const val ARTWORK_SLIDE_MS = 320
+
+/** Sweep length for the final synced line, which has no next timestamp to end on. */
+private const val LAST_LINE_MS = 4_000L
+
+/**
+ * The cover art. It flies in from the mini player, follows a sideways drag
+ * (swipe left for next, right for previous) and slides out in the direction of
+ * travel when the track changes.
+ */
+@Composable
+private fun ArtworkStage(
+    nowPlaying: NowPlaying,
+    direction: () -> Int,
+    onSwipeNext: () -> Unit,
+    onSwipePrevious: () -> Unit,
+) {
+    val reduced = LocalReducedMotion.current
+    val scope = rememberCoroutineScope()
+    val dragX = remember { Animatable(0f) }
+    val thresholdPx = with(LocalDensity.current) { 96.dp.toPx() }
+    val currentOnNext by rememberUpdatedState(onSwipeNext)
+    val currentOnPrevious by rememberUpdatedState(onSwipePrevious)
+    val placeholder = Brush.verticalGradient(
+        listOf(SilveryTheme.colors.artPlaceholder, MaterialTheme.colorScheme.background),
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .sharedPlayerElement(SharedArtworkKey)
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        scope.launch { dragX.snapTo(dragX.value + dragAmount) }
+                    },
+                    onDragEnd = {
+                        when {
+                            dragX.value <= -thresholdPx -> currentOnNext()
+                            dragX.value >= thresholdPx -> currentOnPrevious()
+                        }
+                        scope.launch {
+                            dragX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                        }
+                    },
+                    onDragCancel = { scope.launch { dragX.animateTo(0f) } },
+                )
+            }
+            .graphicsLayer {
+                translationX = dragX.value
+                // A slight tilt makes the drag feel like handling a record sleeve.
+                rotationZ = dragX.value / 60f
+            },
+    ) {
+        AnimatedContent(
+            targetState = nowPlaying.track,
+            contentKey = { it.id },
+            transitionSpec = {
+                if (reduced) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    val d = direction()
+                    (slideInHorizontally(tween(ARTWORK_SLIDE_MS)) { width -> width * d } + fadeIn(tween(ARTWORK_SLIDE_MS))) togetherWith
+                        (slideOutHorizontally(tween(ARTWORK_SLIDE_MS)) { width -> -width * d } + fadeOut(tween(220)))
+                }
+            },
+            label = "artworkSwap",
+        ) { track ->
+            Artwork(
+                url = track.artworkUrl,
+                contentDescription = "${track.title} cover art",
+                shape = MaterialTheme.shapes.large,
+                placeholder = placeholder,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }
@@ -450,13 +598,15 @@ private fun LyricsPane(
     error: DataError?,
     isEmpty: Boolean,
     positionMs: Long,
+    isPlaying: Boolean,
+    durationMs: Long,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         if (lyrics != null && !lyrics.isEmpty) {
             if (lyrics.isSynced) {
-                SyncedLyrics(lyrics = lyrics, positionMs = positionMs)
+                SyncedLyrics(lyrics = lyrics, positionMs = positionMs, isPlaying = isPlaying, durationMs = durationMs)
             } else {
                 PlainLyrics(lyrics = lyrics)
             }
@@ -468,15 +618,26 @@ private fun LyricsPane(
                 emptyMessage = "No lyrics for this track.",
                 loadingMessage = "Finding lyrics…",
                 onRetry = onRetry,
+                skeletonRows = 0,
             )
         }
     }
 }
 
+/**
+ * Karaoke-style synced lyrics. The active line sweeps from muted to bright as
+ * it is sung, lines already sung fade back, and upcoming lines wait at a
+ * slightly smaller scale. Position is extrapolated per frame so the sweep is
+ * smooth; the per-frame read happens only in the draw phase.
+ */
 @Composable
-private fun SyncedLyrics(lyrics: Lyrics, positionMs: Long) {
+private fun SyncedLyrics(lyrics: Lyrics, positionMs: Long, isPlaying: Boolean, durationMs: Long) {
     val listState = rememberLazyListState()
-    val activeIndex = lyrics.activeLineIndex(positionMs)
+    val reduced = LocalReducedMotion.current
+    val smoothPosition = rememberSmoothPositionMs(positionMs, isPlaying, durationMs)
+    val activeIndex by remember(lyrics) {
+        derivedStateOf { lyrics.activeLineIndex(smoothPosition.value) }
+    }
 
     LaunchedEffect(activeIndex, lyrics.trackId) {
         if (activeIndex >= 0) {
@@ -487,6 +648,10 @@ private fun SyncedLyrics(lyrics: Lyrics, positionMs: Long) {
         }
     }
 
+    val lineSpec = tween<Float>(durationMillis = if (reduced) 0 else 400)
+    val sungColor = MaterialTheme.colorScheme.onBackground
+    val mutedColor = SilveryTheme.colors.textMuted
+
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(vertical = 32.dp),
@@ -495,24 +660,59 @@ private fun SyncedLyrics(lyrics: Lyrics, positionMs: Long) {
     ) {
         itemsIndexed(lyrics.lines) { index, line ->
             val isActive = index == activeIndex
-            val color by animateColorAsState(
-                targetValue = if (isActive) {
-                    MaterialTheme.colorScheme.onBackground
-                } else {
-                    SilveryTheme.colors.textMuted
+            val scale by animateFloatAsState(
+                targetValue = if (isActive) 1f else 0.94f,
+                animationSpec = lineSpec,
+                label = "lyricScale",
+            )
+            val alpha by animateFloatAsState(
+                targetValue = when {
+                    isActive -> 1f
+                    index < activeIndex -> 0.4f
+                    else -> 0.75f
                 },
-                animationSpec = tween(durationMillis = 400),
-                label = "lyricLine",
+                animationSpec = lineSpec,
+                label = "lyricAlpha",
             )
-            Text(
-                text = line.text,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = 19.sp,
-                    lineHeight = 26.sp,
-                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                ),
-                color = color,
+            val style = MaterialTheme.typography.titleMedium.copy(
+                fontSize = 19.sp,
+                lineHeight = 26.sp,
+                fontWeight = FontWeight.SemiBold,
             )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        this.alpha = alpha
+                        transformOrigin = TransformOrigin(0f, 0.5f)
+                    },
+            ) {
+                Text(text = line.text, style = style, color = mutedColor)
+                if (isActive) {
+                    val start = line.startMs ?: 0L
+                    val end = lyrics.lines.getOrNull(index + 1)?.startMs
+                        ?: (start + LAST_LINE_MS).coerceAtMost(durationMs.takeIf { it > start } ?: Long.MAX_VALUE)
+                    // The same text in the bright colour, revealed left to right.
+                    Text(
+                        text = line.text,
+                        style = style,
+                        color = sungColor,
+                        modifier = Modifier.drawWithContent {
+                            val span = (end - start).coerceAtLeast(1L)
+                            val progress = if (reduced) {
+                                1f
+                            } else {
+                                ((smoothPosition.value - start).toFloat() / span).coerceIn(0f, 1f)
+                            }
+                            clipRect(right = size.width * progress) {
+                                this@drawWithContent.drawContent()
+                            }
+                        },
+                    )
+                }
+            }
         }
     }
 }

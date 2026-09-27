@@ -162,7 +162,7 @@ fun EqualizerScreen(
             }
 
             Text(
-                text = "Drag a band to shape the curve. Changes apply instantly and stay with this profile.",
+                text = "Drag a band to shape the curve. Changes apply instantly.",
                 style = MaterialTheme.typography.bodySmall,
                 color = SilveryTheme.colors.textTertiary,
                 modifier = Modifier.padding(top = 24.dp),

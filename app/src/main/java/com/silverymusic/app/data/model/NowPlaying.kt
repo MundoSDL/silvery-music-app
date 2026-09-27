@@ -12,7 +12,12 @@ data class NowPlaying(
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
     val listeningStatus: ListeningStatus = ListeningStatus.Solo,
+    /** Set when a stream failed to play; cleared once playback resumes. */
+    val playbackError: String? = null,
 ) {
+    /** False for the "Nothing playing" placeholder shown before anything loads. */
+    val hasTrack: Boolean get() = track.id.isNotBlank()
+
     val positionFraction: Float
         get() = if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 

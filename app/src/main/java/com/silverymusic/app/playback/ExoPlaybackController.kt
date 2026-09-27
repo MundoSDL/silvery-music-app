@@ -105,6 +105,9 @@ class ExoPlaybackController(
     /** Index-aligned with the player's media items; unplayable tracks are dropped. */
     private var playerTracks: List<Track> = emptyList()
 
+    /** Stream failures in a row; reset as soon as something actually plays. */
+    private var consecutiveErrors = 0
+
     // ---- Equalizer ---------------------------------------------------------
 
     private var equalizer: Equalizer? = null
@@ -122,8 +125,29 @@ class ExoPlaybackController(
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            // A dead stream must not wedge the UI in a buffering state.
-            _nowPlaying.update { it.copy(isPlaying = false, isBuffering = false) }
+            // A dead stream must not wedge the UI in a buffering state. Say what
+            // happened and move on to the next track, but stop once every track
+            // in the queue has failed in a row so repeat-all can't loop forever.
+            val failedTitle = _nowPlaying.value.track.title
+            consecutiveErrors++
+            val active = player
+            val canSkip = active != null && active.hasNextMediaItem() && consecutiveErrors < playerTracks.size
+            _nowPlaying.update {
+                it.copy(
+                    isPlaying = false,
+                    isBuffering = false,
+                    playbackError = if (canSkip) {
+                        "Couldn't play \"$failedTitle\". Skipping to the next track."
+                    } else {
+                        "Couldn't play \"$failedTitle\"."
+                    },
+                )
+            }
+            if (canSkip && active != null) {
+                active.seekToNextMediaItem()
+                active.prepare()
+                active.play()
+            }
         }
     }
 
@@ -209,7 +233,12 @@ class ExoPlaybackController(
         if (tracks.isEmpty()) return
         val start = startIndex.coerceIn(tracks.indices)
         val selected = tracks[start].withLike()
-        _queue.value = tracks.map { it.withLike() }
+        // The visible queue mirrors what the player will actually play, so
+        // shuffling or skipping never makes unplayable rows vanish later on.
+        // A metadata-only catalog (no stream URLs at all) is shown as is.
+        val playable = tracks.filter { it.isPlayable }
+        _queue.value = playable.ifEmpty { tracks }.map { it.withLike() }
+        consecutiveErrors = 0
         _nowPlaying.update {
             it.copy(
                 track = selected,
@@ -218,11 +247,11 @@ class ExoPlaybackController(
                 durationMs = selected.durationMs,
                 isPlaying = false,
                 isBuffering = true,
+                playbackError = null,
             )
         }
 
         onPlayerThread {
-            val playable = tracks.filter { it.isPlayable }
             playerTracks = playable
             if (playable.isEmpty()) {
                 // Metadata-only catalog (the offline sample data): keep the UI
@@ -478,8 +507,10 @@ class ExoPlaybackController(
                 durationMs = reportedDuration ?: track?.durationMs ?: current.durationMs,
                 isPlaying = active.isPlaying,
                 isBuffering = active.playbackState == Player.STATE_BUFFERING,
+                playbackError = if (active.isPlaying) null else current.playbackError,
             )
         }
+        if (active.isPlaying) consecutiveErrors = 0
     }
 
     /** Player callbacks don't fire while position advances, so poll it. */

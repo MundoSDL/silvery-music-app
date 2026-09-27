@@ -168,4 +168,35 @@ class PersistenceTest {
             assertTrue(it.likedTracks.value.isEmpty())
         }
     }
+
+    @Test
+    fun placeholderTrackCannotBeLiked() {
+        val placeholder = track.copy(id = "", title = "Nothing playing")
+        val likes = LikesStore(prefs)
+
+        assertFalse(likes.toggle(placeholder.id) { placeholder })
+        assertTrue(likes.likedTracks.value.isEmpty())
+    }
+
+    @Test
+    fun reusedProfileIdStartsWithoutOldLikes() {
+        val likes = LikesStore(prefs)
+        val profiles = ProfileStore(
+            prefs = prefs,
+            onActiveProfileChanged = likes::bindProfile,
+            onProfileRemoved = likes::clearProfile,
+        )
+        profiles.add("Sam", isKid = false, accentIndex = 1)
+        val samId = profiles.profiles.value.last().id
+        profiles.select(samId)
+        likes.toggle(track.id) { track }
+
+        profiles.remove(samId)
+        profiles.add("Alex", isKid = false, accentIndex = 2)
+        val alexId = profiles.profiles.value.last().id
+        profiles.select(alexId)
+
+        assertEquals("The new profile reuses the freed id", samId, alexId)
+        assertFalse("A deleted profile's likes must not carry over", likes.isLiked(track.id))
+    }
 }
