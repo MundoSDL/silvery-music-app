@@ -36,6 +36,9 @@ class PlayerViewModel(
         viewModelScope.launch {
             repository.nowPlaying.collect { nowPlaying ->
                 val trackChanged = _uiState.value.nowPlaying?.track?.id != nowPlaying.track.id
+                val newError = nowPlaying.playbackError
+                    ?.takeIf { it != _uiState.value.nowPlaying?.playbackError }
+                newError?.let { _effects.trySend(PlayerEffect.ShowMessage(it)) }
                 _uiState.update { state ->
                     if (trackChanged) {
                         state.copy(

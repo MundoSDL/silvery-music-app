@@ -25,7 +25,13 @@ class SearchViewModel(private val repository: MusicRepository) : ViewModel() {
 
     private val queryInput = MutableStateFlow("")
     private var genresJob: Job? = null
-    private var genreBrowseJob: Job? = null
+
+    /**
+     * The one request allowed to write results. A typed search and a genre
+     * browse both go through it, so starting either cancels the other and a
+     * slow, stale response can never overwrite a newer one.
+     */
+    private var resultsJob: Job? = null
 
     init {
         loadGenres()
@@ -43,9 +49,9 @@ class SearchViewModel(private val repository: MusicRepository) : ViewModel() {
      * Search is where you look around, not where you commit.
      */
     fun onGenreSelected(genre: Genre) {
-        genreBrowseJob?.cancel()
-        genreBrowseJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null, browsingGenre = genre) }
+        _uiState.update { it.copy(browsingGenre = genre) }
+        replaceResults {
+            _uiState.update { it.copy(isLoading = true, error = null) }
             val result = repository.tracksForGenre(genre)
             _uiState.update {
                 it.copy(
@@ -58,9 +64,8 @@ class SearchViewModel(private val repository: MusicRepository) : ViewModel() {
     }
 
     fun onClearGenre() {
-        genreBrowseJob?.cancel()
         _uiState.update { it.copy(browsingGenre = null) }
-        genreBrowseJob = viewModelScope.launch { runSearch(_uiState.value.query) }
+        replaceResults { runSearch(_uiState.value.query) }
     }
 
     @OptIn(FlowPreview::class)
@@ -70,8 +75,18 @@ class SearchViewModel(private val repository: MusicRepository) : ViewModel() {
             queryInput
                 .debounce { if (it.isBlank()) 0L else 300L }
                 .distinctUntilChanged()
-                .collect { query -> runSearch(query) }
+                .collect { query ->
+                    // The newest intent wins: typing closes an open genre and
+                    // cancels its request instead of racing it.
+                    _uiState.update { it.copy(browsingGenre = null) }
+                    replaceResults { runSearch(query) }
+                }
         }
+    }
+
+    private fun replaceResults(block: suspend () -> Unit) {
+        resultsJob?.cancel()
+        resultsJob = viewModelScope.launch { block() }
     }
 
     private suspend fun runSearch(query: String) {
@@ -105,7 +120,8 @@ class SearchViewModel(private val repository: MusicRepository) : ViewModel() {
 
     fun onRetry() {
         loadGenres()
-        viewModelScope.launch { runSearch(_uiState.value.query) }
+        val genre = _uiState.value.browsingGenre
+        if (genre != null) onGenreSelected(genre) else replaceResults { runSearch(_uiState.value.query) }
     }
 
     fun onPlayResult(index: Int) {

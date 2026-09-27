@@ -19,6 +19,8 @@ class ProfileStore(
     private val prefs: SharedPreferences? = null,
     /** Notified when the active profile changes, so per-profile data can rebind. */
     private val onActiveProfileChanged: (String) -> Unit = {},
+    /** Notified when a profile is deleted, so its per-profile data can be dropped. */
+    private val onProfileRemoved: (String) -> Unit = {},
 ) {
 
     private val _profiles = MutableStateFlow(readProfiles() ?: defaultProfiles())
@@ -56,8 +58,10 @@ class ProfileStore(
     }
 
     fun remove(profileId: String) {
+        val before = _profiles.value
         _profiles.update { list -> list.filterNot { it.id == profileId && it.isRemovable } }
         persistProfiles()
+        if (_profiles.value.size < before.size) onProfileRemoved(profileId)
         if (_activeProfileId.value == profileId) {
             _profiles.value.firstOrNull()?.let { select(it.id) }
         }

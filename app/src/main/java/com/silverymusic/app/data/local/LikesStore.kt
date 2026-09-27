@@ -40,6 +40,8 @@ class LikesStore(private val prefs: SharedPreferences? = null) {
      * full track when liking, so the Liked Songs list can render without a re-fetch.
      */
     fun toggle(trackId: String, resolve: () -> Track?): Boolean {
+        // A blank id is the "Nothing playing" placeholder, never a real track.
+        if (trackId.isBlank()) return false
         val liked = trackId !in likedById
         if (liked) {
             val track = resolve() ?: return false
@@ -49,6 +51,18 @@ class LikesStore(private val prefs: SharedPreferences? = null) {
         }
         publish()
         return liked
+    }
+
+    /**
+     * Drops [id]'s saved collection. Called when a profile is deleted, so a new
+     * profile that later reuses the same id starts empty.
+     */
+    fun clearProfile(id: String) {
+        prefs?.edit()?.remove("$KEY_PREFIX$id")?.apply()
+        if (id == profileId) {
+            likedById = LinkedHashMap()
+            _likedTracks.value = emptyList()
+        }
     }
 
     /** Drops every profile's collection — used when signing out. */

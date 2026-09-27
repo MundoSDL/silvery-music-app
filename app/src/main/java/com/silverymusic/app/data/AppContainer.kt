@@ -31,10 +31,6 @@ object AppContainer {
     @Volatile
     private var lyricsRepositoryOverride: LyricsRepository? = null
 
-    /** Set when a live playback stack is installed; null on the offline fake. */
-    @Volatile
-    private var playbackRelease: (() -> Unit)? = null
-
     /**
      * Signing in renames the main profile; going guest marks it guest mode; signing
      * out returns profiles to factory state and drops every saved like.
@@ -64,8 +60,13 @@ object AppContainer {
         val prefs = SilveryPrefs.from(context)
         sessionStore = SessionStore(prefs)
         likesStore = LikesStore(prefs)
-        // Switching profile rebinds Liked Songs to that profile's collection.
-        profileStore = ProfileStore(prefs) { profileId -> likesStore.bindProfile(profileId) }
+        // Switching profile rebinds Liked Songs to that profile's collection, and
+        // deleting one drops its likes so a reused id never inherits them.
+        profileStore = ProfileStore(
+            prefs = prefs,
+            onActiveProfileChanged = { profileId -> likesStore.bindProfile(profileId) },
+            onProfileRemoved = { profileId -> likesStore.clearProfile(profileId) },
+        )
         likesStore.bindProfile(profileStore.activeProfileId.value)
     }
 
@@ -105,7 +106,6 @@ object AppContainer {
                 context = context,
                 likesStore = likesStore,
             )
-            playbackRelease = controller::release
             com.silverymusic.app.data.repository.JamendoMusicRepository(
                 service = service,
                 playback = controller,
@@ -115,15 +115,6 @@ object AppContainer {
         }
 
         install(music = music, lyrics = lyrics)
-    }
-
-    /**
-     * Frees the ExoPlayer instance. Called when the last Activity is genuinely
-     * finishing — not on a configuration change, which would stop playback on
-     * every rotation.
-     */
-    fun releasePlayback() {
-        playbackRelease?.invoke()
     }
 
     fun requireContext(): Context =

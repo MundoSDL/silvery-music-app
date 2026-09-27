@@ -15,10 +15,6 @@ object Routes {
     const val SEARCH = "search"
 
     const val PLAYER = "player"
-    const val DISCOVERY_CONTROL = "discovery_control"
-    const val PROFILE_SWITCHER = "profile_switcher"
-    const val SYNC_SHEET = "sync_sheet"
-    const val QUEUE_SHEET = "queue_sheet"
 
     /** Full list for a home/discover section. [SEE_ALL_ARG] carries the section key. */
     const val SEE_ALL_ARG = "section"

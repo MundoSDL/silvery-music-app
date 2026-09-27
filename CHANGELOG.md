@@ -2,6 +2,53 @@
 
 All notable changes to the Silvery Music app are documented here. Newest first.
 
+## Unreleased
+
+Motion and polish: the player now feels like one continuous surface, plus a
+round of small bug fixes.
+
+### New
+
+- **The cover art flies between the mini player and the full player.** Tapping
+  the mini bar grows its artwork into the player while the player rises into
+  place; minimising sends it back.
+- **The player takes its colour from the album art**, cross-fading to the next
+  cover's colour when the track changes.
+- **Karaoke-style synced lyrics.** The current line fills from left to right as
+  it is sung, sung lines fade back and upcoming lines wait slightly smaller.
+- **Swipe the cover to change track**: left for next, right for previous. The
+  art slides in the direction you are moving, for buttons as well as swipes.
+- **Livelier controls.** Liking bounces the heart, throws a small ring of sparks
+  and gives a haptic tick; play and pause morph into each other; progress bars
+  glide every frame instead of stepping twice a second.
+- **The queue animates** when it is shuffled or advances.
+- **Equalizer presets morph** the curve band by band instead of jumping.
+- **Loading shows placeholder rows** with a slow shimmer instead of bare text.
+- **Reduced motion is respected.** With system animations turned off, all of the
+  above falls back to instant changes.
+- **Continuous integration.** Pushes and pull requests run the unit tests and
+  build a debug APK on GitHub Actions.
+
+### Fixed
+
+- Tapping the heart before anything had loaded saved "Nothing playing" to Liked
+  Songs. The mini player's controls now stay disabled until there is a track.
+- A new profile could inherit the likes of a deleted one that had the same id.
+  Deleting a profile now drops its likes.
+- Search could show stale results when a slow search and a genre browse raced;
+  the newest request now always wins.
+- Shuffling could silently drop tracks with no playable stream from the queue.
+  The queue now only lists tracks that can actually play.
+- A stream that failed to play left the player stuck. It now says which track
+  failed and skips to the next one (stopping if the whole queue fails).
+- Profile switcher, Queue, Sync and Discovery Control sheets opened over a blank
+  screen; they now float over the screen that opened them.
+- The notification permission prompt appeared on the very first screen. It now
+  appears the first time music starts playing.
+- The player's heart had a 36dp touch target; it now has the standard 48dp.
+- Settings that are not wired to playback yet (gapless, normalization, autoplay,
+  private session, notifications) are now labelled as previews.
+
 ## v0.2.5 — 2026-07-28
 
 The app now remembers you, plays from the notification shade, and every "See all"

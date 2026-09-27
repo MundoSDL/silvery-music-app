@@ -1,5 +1,8 @@
 package com.silverymusic.app.ui.screens.equalizer
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -12,7 +15,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -25,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.silverymusic.app.data.model.EqSettings
 import com.silverymusic.app.theme.SilveryTheme
+import com.silverymusic.app.ui.motion.LocalReducedMotion
 import kotlin.math.roundToInt
 
 private val TrackWidth = 4.dp
@@ -50,6 +57,16 @@ fun EqBandSlider(
     val disabledColor = SilveryTheme.colors.textMuted
 
     val range = EqSettings.MAX_GAIN_DB - EqSettings.MIN_GAIN_DB
+
+    // Picking a preset or resetting springs each band to its new level, so the
+    // whole curve visibly morphs. Under the finger the thumb follows exactly.
+    var dragging by remember { mutableStateOf(false) }
+    val animatedGain by animateFloatAsState(
+        targetValue = gainDb,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "eqBandGain",
+    )
+    val drawnGain = if (dragging || LocalReducedMotion.current) gainDb else animatedGain
 
     Column(
         modifier = modifier.width(40.dp),
@@ -78,7 +95,11 @@ fun EqBandSlider(
                 .pointerInput(enabled) {
                     if (!enabled) return@pointerInput
                     val inset = ThumbRadius.toPx()
-                    detectDragGestures { change, _ ->
+                    detectDragGestures(
+                        onDragStart = { dragging = true },
+                        onDragEnd = { dragging = false },
+                        onDragCancel = { dragging = false },
+                    ) { change, _ ->
                         currentOnGainChange(gainForY(change.position.y, size.height.toFloat(), inset, range))
                     }
                 },
@@ -90,7 +111,7 @@ fun EqBandSlider(
             val top = thumbPx
             val usableHeight = size.height - thumbPx * 2
             val centerY = top + usableHeight / 2f
-            val fraction = (gainDb - EqSettings.MIN_GAIN_DB) / range
+            val fraction = (drawnGain - EqSettings.MIN_GAIN_DB) / range
             val thumbY = top + usableHeight * (1f - fraction)
 
             val activeColor = if (enabled) accent else disabledColor

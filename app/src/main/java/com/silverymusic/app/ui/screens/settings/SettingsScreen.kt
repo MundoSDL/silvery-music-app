@@ -33,6 +33,9 @@ import com.silverymusic.app.theme.SilveryTheme
 import com.silverymusic.app.ui.components.SilveryTopBar
 import com.silverymusic.app.ui.silveryViewModel
 
+/** Tacked onto settings this demo shows but doesn't apply to playback yet. */
+private const val DEMO_PREVIEW = "Preview only: not applied in this demo."
+
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
@@ -72,14 +75,14 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsToggleRow(
                     title = "Gapless playback",
-                    description = "No silence between tracks on an album.",
+                    description = "No silence between tracks on an album. $DEMO_PREVIEW",
                     checked = settings.gaplessPlayback,
                     onCheckedChange = viewModel::onGaplessChange,
                 )
                 SettingsDivider()
                 SettingsToggleRow(
                     title = "Volume normalization",
-                    description = "Evens out loudness between tracks. Off preserves original dynamics.",
+                    description = "Evens out loudness between tracks. Off preserves original dynamics. $DEMO_PREVIEW",
                     checked = settings.volumeNormalization,
                     onCheckedChange = viewModel::onNormalizationChange,
                 )
@@ -94,7 +97,7 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsToggleRow(
                     title = "Autoplay similar tracks",
-                    description = "When your queue ends, keep playing. Off by default — your queue is yours.",
+                    description = "When your queue ends, keep playing. Off by default — your queue is yours. $DEMO_PREVIEW",
                     checked = settings.autoplaySimilar,
                     onCheckedChange = viewModel::onAutoplayChange,
                 )
@@ -103,14 +106,14 @@ fun SettingsScreen(
             SettingsSection(title = "Privacy") {
                 SettingsToggleRow(
                     title = "Private session",
-                    description = "Nothing you play is added to your history or feeds the algorithm.",
+                    description = "Nothing you play is added to your history or feeds the algorithm. $DEMO_PREVIEW",
                     checked = settings.privateSession,
                     onCheckedChange = viewModel::onPrivateSessionChange,
                 )
                 SettingsDivider()
                 SettingsToggleRow(
                     title = "Notifications",
-                    description = "Off by default. Silvery never sends promotional pushes.",
+                    description = "Off by default. Silvery never sends promotional pushes. $DEMO_PREVIEW",
                     checked = settings.notifications,
                     onCheckedChange = viewModel::onNotificationsChange,
                 )
